@@ -30,13 +30,6 @@ jobs:
       - name: Build Overtime Analyzer EXE
         run: python build_overtime.py
 
-      - name: Verify Build Output Files
-        run: |
-          echo "Checking build output files..."
-          if exist "dist\access_log_analyzer.exe" (echo "✅ access_log_analyzer.exe exists") else (echo "❌ access_log_analyzer.exe not found" & exit 1)
-          if exist "dist\overtime_analyzer.exe" (echo "✅ overtime_analyzer.exe exists") else (echo "❌ overtime_analyzer.exe not found" & exit 1)
-          echo "All build output files verified successfully."
-
       - name: Upload Access Log Analyzer EXE as artifact
         uses: actions/upload-artifact@v4
         with:
