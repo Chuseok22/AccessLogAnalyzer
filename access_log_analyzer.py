@@ -78,7 +78,9 @@ class AccessLogAnalyzer(QMainWindow):
         # 결과 테이블
         self.table = QTableWidget()
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["날짜", "출근 횟수", "퇴근 횟수", "상세 기록"])
+        self.table.setHorizontalHeaderLabels(
+            ["날짜", "경비해제 횟수", "경비시작 횟수", "상세 기록"]
+        )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         # 레이아웃에 위젯 추가
@@ -118,7 +120,6 @@ class AccessLogAnalyzer(QMainWindow):
                 )
                 self.file_label.setText("선택된 파일 없음")
                 self.analyze_button.setEnabled(False)
-
 
     def analyze_data(self):
         if self.df is None:
@@ -211,30 +212,68 @@ class AccessLogAnalyzer(QMainWindow):
             filtered_df_slim.loc[filtered_df_slim["시간_시"] < 12, "시간대"] = "오전"
             filtered_df_slim.loc[filtered_df_slim["시간_시"] < 5, "시간대"] = "새벽"
 
-            # 각 기록을 출근/퇴근으로 판단하는 함수
+            # 각 날짜별로 첫 이벤트와 마지막 이벤트 식별을 위한 준비
+            filtered_df_slim["이벤트순서"] = filtered_df_slim.groupby(
+                col_mapping["발생일자"]
+            ).cumcount()
+
+            # 각 기록을 경비해제/경비시작으로 판단하는 함수
             def determine_record_type(row):
                 mode = str(row[col_mapping["모드"]]).lower()
                 time_period = row["시간대"]
                 hour = row["시간_시"]
 
-                if "출근" in mode:
-                    return "출근"
-                elif "퇴근" in mode:
-                    return "퇴근"
-                elif "해제" in mode and time_period == "오전":
-                    return "출근"
-                elif "세팅" in mode and (time_period == "오후" or time_period == "새벽"):
-                    return "퇴근"
+                # 명시적인 경비 해제/설정 상태 확인
+                if "출근" in mode or "해제" in mode:
+                    return "경비해제"
+                elif "퇴근" in mode or "세팅" in mode or "세트" in mode:
+                    return "경비시작"
+                # 출입 기록은 시간대에 따라 판단
                 elif "출입" in mode:
-                    if time_period == "오전":
-                        return "출근"
-                    elif time_period == "오후" or hour > 17:  # 17시 이후는 퇴근으로 판단
-                        return "퇴근"
+                    # 출입은 시간대로만 판단이 어려움
+                    # 로그를 기타로 분류하고 나중에 컨텍스트로 판단
+                    return "출입(불명확)"
 
                 return "기타"
 
             # 각 기록 유형 판단
             filtered_df_slim["기록유형"] = filtered_df_slim.apply(determine_record_type, axis=1)
+
+            # '출입(불명확)' 기록을 같은 날짜의 다른 기록으로 분류 시도
+            # 각 날짜별 첫번째와 마지막 '출입'은 시간에 따라 분류
+            days = filtered_df_slim[col_mapping["발생일자"]].dt.date.unique()
+
+            for day in days:
+                day_records = filtered_df_slim[
+                    filtered_df_slim[col_mapping["발생일자"]].dt.date == day
+                ]
+                unclear_records = day_records[day_records["기록유형"] == "출입(불명확)"]
+
+                if len(unclear_records) > 0:
+                    # 해당 날짜의 첫 기록과 마지막 기록이 '출입(불명확)'인 경우 시간대로 추정
+                    first_event_idx = day_records["이벤트순서"].min()
+                    last_event_idx = day_records["이벤트순서"].max()
+
+                    # 첫 기록이 '출입(불명확)'이고 오전이면 '경비해제'로 간주
+                    first_event = day_records[day_records["이벤트순서"] == first_event_idx].iloc[0]
+                    if first_event["기록유형"] == "출입(불명확)" and first_event["시간대"] in [
+                        "오전",
+                        "새벽",
+                    ]:
+                        filtered_df_slim.loc[
+                            (filtered_df_slim[col_mapping["발생일자"]].dt.date == day)
+                            & (filtered_df_slim["이벤트순서"] == first_event_idx),
+                            "기록유형",
+                        ] = "경비해제"
+
+                    # 마지막 기록이 '출입(불명확)'이고 오후이면 '경비시작'으로 간주
+                    last_event = day_records[day_records["이벤트순서"] == last_event_idx].iloc[0]
+                    if last_event["기록유형"] == "출입(불명확)" and last_event["시간대"] == "오후":
+                        filtered_df_slim.loc[
+                            (filtered_df_slim[col_mapping["발생일자"]].dt.date == day)
+                            & (filtered_df_slim["이벤트순서"] == last_event_idx),
+                            "기록유형",
+                        ] = "경비시작"
 
             # 날짜별로 그룹화
             grouped = filtered_df_slim.groupby(pd.Grouper(key=col_mapping["발생일자"], freq="D"))
@@ -249,19 +288,22 @@ class AccessLogAnalyzer(QMainWindow):
                 if len(group) == 0:
                     continue
 
-                # 현재 날짜의 출/퇴근 기록 분석
-                check_in_records = group[group["기록유형"] == "출근"]
-                check_out_records = group[group["기록유형"] == "퇴근"]
+                # 현재 날짜의 경비 해제/시작 기록 분석
+                security_off_records = group[group["기록유형"] == "경비해제"]
+                security_on_records = group[group["기록유형"] == "경비시작"]
+                unclear_records = group[group["기록유형"] == "출입(불명확)"]
 
-                check_in_count = len(check_in_records)
-                check_out_count = len(check_out_records)
+                security_off_count = len(security_off_records)
+                security_on_count = len(security_on_records)
+                unclear_count = len(unclear_records)
 
                 # 결과 저장
                 analysis_results.append(
                     {
                         "date": date,
-                        "check_in_count": check_in_count,
-                        "check_out_count": check_out_count,
+                        "security_off_count": security_off_count,
+                        "security_on_count": security_on_count,
+                        "unclear_count": unclear_count,
                         "records": group,
                         "is_suspicious": False,  # 일단 의심 아님으로 초기화
                     }
@@ -269,29 +311,44 @@ class AccessLogAnalyzer(QMainWindow):
 
             # 두번째 패스: 자정 넘어가는 경우 고려
             for i, current in enumerate(analysis_results):
-                # 의심스러운 패턴 여부 판단
-                if current["check_in_count"] != 1 or current["check_out_count"] != 1:
-                    # 출근은 있으나 퇴근이 없는 경우: 다음날 새벽 퇴근 확인
-                    if current["check_in_count"] == 1 and current["check_out_count"] == 0:
+                # 정상 패턴: 경비해제 1회, 경비시작 1회
+                # 의심 패턴: 경비해제나 경비시작이 0회 또는 2회 이상
+
+                # 의심스러운 패턴 판단
+                if current["security_off_count"] != 1 or current["security_on_count"] != 1:
+                    # 경비해제는 있으나 경비시작이 없는 경우: 다음날 새벽 경비시작 확인
+                    if current["security_off_count"] == 1 and current["security_on_count"] == 0:
                         # 다음날 데이터가 있는지 확인
                         if i + 1 < len(analysis_results):
                             next_day = analysis_results[i + 1]
-                            # 다음날 새벽(5시 이전)에 퇴근 기록이 있는지 확인
+                            # 다음날 새벽(5시 이전)에 경비시작 기록이 있는지 확인
                             next_day_early_records = next_day["records"][
                                 (next_day["records"]["시간대"] == "새벽")
-                                & (next_day["records"]["기록유형"] == "퇴근")
+                                & (next_day["records"]["기록유형"] == "경비시작")
                             ]
 
-                            # 다음날 새벽 퇴근이 있고, 출근이 없거나 새벽 이후라면 정상으로 간주
-                            if len(next_day_early_records) > 0 and next_day["check_in_count"] <= 1:
-                                # 현재 날짜는 정상, 다음날은 출근이 없으면 의심
+                            # 다음날 새벽 경비시작이 있으면 정상으로 간주
+                            if len(next_day_early_records) > 0:
                                 current["is_suspicious"] = False
-                                if next_day["check_in_count"] == 0:
-                                    next_day["is_suspicious"] = True
                                 continue
 
-                    # 그 외의 경우 의심스러운 날짜로 표시
-                    current["is_suspicious"] = True
+                    # 불명확한 출입 기록이 있는 경우 추가 검증
+                    elif current["unclear_count"] > 0:
+                        # 불명확한 출입 기록만 있고 다른 기록이 없으면 의심 대상
+                        if current["security_off_count"] == 0 and current["security_on_count"] == 0:
+                            current["is_suspicious"] = True
+                        # 경비해제/시작이 각각 1회씩 있고, 그 외에 불명확한 출입이 있으면 의심 대상
+                        elif (
+                            current["security_off_count"] == 1 and current["security_on_count"] == 1
+                        ):
+                            current["is_suspicious"] = True
+
+                    # 그 외의 비정상 패턴은 의심스러운 날짜로 표시
+                    if current["security_off_count"] > 1 or current["security_on_count"] > 1:
+                        current["is_suspicious"] = True
+                    # 경비해제/시작이 둘 다 없는 경우도 의심 대상
+                    elif current["security_off_count"] == 0 and current["security_on_count"] == 0:
+                        current["is_suspicious"] = True
 
             # 테이블 초기화
             self.table.setRowCount(0)
@@ -311,13 +368,13 @@ class AccessLogAnalyzer(QMainWindow):
                     date_item = QTableWidgetItem(date.strftime("%Y-%m-%d"))
                     self.table.setItem(row, 0, date_item)
 
-                    # 출근 횟수
-                    check_in_item = QTableWidgetItem(str(result["check_in_count"]))
-                    self.table.setItem(row, 1, check_in_item)
+                    # 경비해제 횟수
+                    security_off_item = QTableWidgetItem(str(result["security_off_count"]))
+                    self.table.setItem(row, 1, security_off_item)
 
-                    # 퇴근 횟수
-                    check_out_item = QTableWidgetItem(str(result["check_out_count"]))
-                    self.table.setItem(row, 2, check_out_item)
+                    # 경비시작 횟수
+                    security_on_item = QTableWidgetItem(str(result["security_on_count"]))
+                    self.table.setItem(row, 2, security_on_item)
 
                     # 상세 정보
                     details = []
@@ -339,7 +396,9 @@ class AccessLogAnalyzer(QMainWindow):
             if row == 0:
                 QMessageBox.information(self, "분석 완료", "의심스러운 날짜가 없습니다.")
             else:
-                QMessageBox.information(self, "분석 완료", f"{row}개의 의심스러운 날짜를 발견했습니다.")
+                QMessageBox.information(
+                    self, "분석 완료", f"{row}개의 의심스러운 날짜를 발견했습니다."
+                )
 
         except Exception as e:
             QMessageBox.critical(self, "오류", f"데이터 분석 중 오류가 발생했습니다: {str(e)}")
@@ -370,8 +429,8 @@ class AccessLogAnalyzer(QMainWindow):
                     data.append(
                         {
                             "날짜": date,
-                            "출근 횟수": check_in_count,
-                            "퇴근 횟수": check_out_count,
+                            "경비해제 횟수": check_in_count,
+                            "경비시작 횟수": check_out_count,
                             "상세 기록": details,
                         }
                     )
