@@ -46,9 +46,6 @@ jobs:
         shell: bash
         run: |
           NOTES=$(cat RELEASE_NOTES.md)
-          NOTES="${NOTES//'%'/'%25'}"
-          NOTES="${NOTES//$'\n'/'%0A'}"
-          NOTES="${NOTES//$'\r'/'%0D'}"
           echo "notes=$NOTES" >> $GITHUB_OUTPUT
 
       - name: Create Release
