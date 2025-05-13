@@ -91,9 +91,11 @@ class OvertimeAnalyzer(QMainWindow):
 
         # 결과 테이블
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
+        self.table.setColumnCount(
+            7
+        )  # 날짜, 직원명, 부서명, 초과근무시간, 경비상태, 의심사유, 근무내용
         self.table.setHorizontalHeaderLabels(
-            ["날짜", "직원명", "초과근무 시간", "경비상태", "의심 사유"]
+            ["날짜", "직원명", "부서명", "초과근무 시간", "경비상태", "의심 사유", "근무내용"]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
@@ -389,52 +391,34 @@ class OvertimeAnalyzer(QMainWindow):
     def process_overtime_log(self, df):
         """초과근무 기록을 처리합니다."""
         try:
-            # 열 이름으로 컬럼 찾기
-            col_mapping = {}
+            # 엑셀 파일 고정 헤더에 맞는 컬럼 매핑
+            col_mapping = {
+                "날짜": "초과근무일자",  # G열 - 초과근무일자
+                "시작시간": "출근시간",  # H열 - 출근시간
+                "종료시간": "퇴근시간",  # I열 - 퇴근시간
+                "이름": "성명",  # D열 - 성명
+            }
 
-            # 컬럼 이름 매핑 (정확한 이름 또는 포함된 문자열로 찾기)
-            for col in df.columns:
-                col_str = str(col).lower()  # 컬럼명을 소문자로 변환하여 비교
-                if "날짜" in col_str or "일자" in col_str or "근무일" in col_str:
-                    col_mapping["날짜"] = col
-                elif "시작" in col_str and ("시간" in col_str or "시각" in col_str):
-                    col_mapping["시작시간"] = col
-                elif "종료" in col_str and ("시간" in col_str or "시각" in col_str):
-                    col_mapping["종료시간"] = col
-                elif "이름" in col_str or "성명" in col_str or "직원" in col_str:
-                    col_mapping["이름"] = col
+            # 필요한 컬럼이 있는지 확인
+            missing_cols = []
+            for key, col_name in col_mapping.items():
+                if col_name not in df.columns:
+                    missing_cols.append(col_name)
 
-            # 필요한 컬럼이 없으면 자동 추정
-            if "날짜" not in col_mapping:
+            if missing_cols:
                 QMessageBox.warning(
                     self,
                     "경고",
-                    "초과근무 날짜 컬럼을 찾을 수 없습니다. 첫 번째 컬럼을 사용합니다.",
+                    f"다음 필수 컬럼을 찾을 수 없습니다: {', '.join(missing_cols)}. 초과근무 분석 실패",
                 )
-                col_mapping["날짜"] = df.columns[0]
-            if "시작시간" not in col_mapping:
-                QMessageBox.warning(
-                    self,
-                    "경고",
-                    "초과근무 시작시간 컬럼을 찾을 수 없습니다. 두 번째 컬럼을 사용합니다.",
-                )
-                col_mapping["시작시간"] = df.columns[1] if len(df.columns) > 1 else None
-            if "종료시간" not in col_mapping:
-                QMessageBox.warning(
-                    self,
-                    "경고",
-                    "초과근무 종료시간 컬럼을 찾을 수 없습니다. 세 번째 컬럼을 사용합니다.",
-                )
-                col_mapping["종료시간"] = df.columns[2] if len(df.columns) > 2 else None
-            if "이름" not in col_mapping:
-                QMessageBox.warning(self, "경고", "직원 이름 컬럼을 찾을 수 없습니다.")
-                col_mapping["이름"] = None
+                # 필수 컬럼이 없으면 빈 리스트 반환
+                return []
 
             # 날짜 필터링 적용
             start_date = self.start_date.date().toString("yyyy-MM-dd")
             end_date = self.end_date.date().toString("yyyy-MM-dd")
 
-            # 데이터프레임에서 날짜 열이 문자열이면 datetime으로 변환
+            # 데이터프레임에서 초과근무일자 열이 문자열이면 datetime으로 변환
             if not pd.api.types.is_datetime64_any_dtype(df[col_mapping["날짜"]]):
                 df["날짜_datetime"] = pd.to_datetime(df[col_mapping["날짜"]], errors="coerce")
             else:
@@ -446,6 +430,17 @@ class OvertimeAnalyzer(QMainWindow):
                 filtered_df = df[
                     (df["날짜_datetime"] >= start_date) & (df["날짜_datetime"] <= end_date)
                 ]
+
+            # 각 행의 데이터 유효성 확인을 위한 작업
+            filtered_df["데이터_유효"] = (
+                pd.notna(filtered_df[col_mapping["이름"]])
+                & pd.notna(filtered_df[col_mapping["날짜"]])
+                & pd.notna(filtered_df[col_mapping["시작시간"]])
+                & pd.notna(filtered_df[col_mapping["종료시간"]])
+            )
+
+            # 유효한 데이터만 선택
+            filtered_df = filtered_df[filtered_df["데이터_유효"]]
 
             # 초과근무 데이터 정리
             overtime_records = []
@@ -459,51 +454,64 @@ class OvertimeAnalyzer(QMainWindow):
                     # 날짜 처리
                     work_date = row["날짜_datetime"].date()
 
-                    # 시작 시간 처리
+                    # 출근시간 처리
+                    start_time = None
                     if pd.notna(row[col_mapping["시작시간"]]):
-                        if isinstance(row[col_mapping["시작시간"]], str):
-                            # 문자열 시간 처리 (형식: HH:MM 또는 HH:MM:SS)
-                            start_parts = row[col_mapping["시작시간"]].split(":")
-                            start_hour = int(start_parts[0])
-                            start_minute = int(start_parts[1]) if len(start_parts) > 1 else 0
-                            start_time = time(start_hour, start_minute)
-                        elif isinstance(row[col_mapping["시작시간"]], datetime):
-                            # datetime 객체인 경우
-                            start_time = row[col_mapping["시작시간"]].time()
-                        elif isinstance(row[col_mapping["시작시간"]], time):
-                            # time 객체인 경우
-                            start_time = row[col_mapping["시작시간"]]
-                        else:
-                            # 숫자인 경우 (예: 1830 -> 18:30)
-                            time_value = int(row[col_mapping["시작시간"]])
-                            start_hour = time_value // 100
-                            start_minute = time_value % 100
-                            start_time = time(start_hour, start_minute)
-                    else:
+                        try:
+                            # 문자열로 시간 처리를 시도
+                            if isinstance(row[col_mapping["시작시간"]], str):
+                                # 문자열 시간 처리 (형식: HH:MM 또는 HH:MM:SS)
+                                start_parts = row[col_mapping["시작시간"]].strip().split(":")
+                                start_hour = int(start_parts[0])
+                                start_minute = int(start_parts[1]) if len(start_parts) > 1 else 0
+                                start_time = time(start_hour, start_minute)
+                            elif isinstance(row[col_mapping["시작시간"]], datetime):
+                                # datetime 객체인 경우
+                                start_time = row[col_mapping["시작시간"]].time()
+                            elif isinstance(row[col_mapping["시작시간"]], time):
+                                # time 객체인 경우
+                                start_time = row[col_mapping["시작시간"]]
+                            elif isinstance(row[col_mapping["시작시간"]], (int, float)):
+                                # 숫자인 경우 (예: 1830 -> 18:30)
+                                time_value = int(row[col_mapping["시작시간"]])
+                                start_hour = time_value // 100
+                                start_minute = time_value % 100
+                                start_time = time(start_hour, start_minute)
+                        except Exception as e:
+                            print(f"출근시간 파싱 오류: {str(e)}")
+                            start_time = regular_start
+
+                    if start_time is None:
                         # 시작 시간이 없으면 정규 근무 시작 시간으로 설정
                         start_time = regular_start
 
-                    # 종료 시간 처리
+                    # 퇴근시간 처리
+                    end_time = None
                     if pd.notna(row[col_mapping["종료시간"]]):
-                        if isinstance(row[col_mapping["종료시간"]], str):
-                            # 문자열 시간 처리
-                            end_parts = row[col_mapping["종료시간"]].split(":")
-                            end_hour = int(end_parts[0])
-                            end_minute = int(end_parts[1]) if len(end_parts) > 1 else 0
-                            end_time = time(end_hour, end_minute)
-                        elif isinstance(row[col_mapping["종료시간"]], datetime):
-                            # datetime 객체인 경우
-                            end_time = row[col_mapping["종료시간"]].time()
-                        elif isinstance(row[col_mapping["종료시간"]], time):
-                            # time 객체인 경우
-                            end_time = row[col_mapping["종료시간"]]
-                        else:
-                            # 숫자인 경우 (예: 1830 -> 18:30)
-                            time_value = int(row[col_mapping["종료시간"]])
-                            end_hour = time_value // 100
-                            end_minute = time_value % 100
-                            end_time = time(end_hour, end_minute)
-                    else:
+                        try:
+                            if isinstance(row[col_mapping["종료시간"]], str):
+                                # 문자열 시간 처리
+                                end_parts = row[col_mapping["종료시간"]].strip().split(":")
+                                end_hour = int(end_parts[0])
+                                end_minute = int(end_parts[1]) if len(end_parts) > 1 else 0
+                                end_time = time(end_hour, end_minute)
+                            elif isinstance(row[col_mapping["종료시간"]], datetime):
+                                # datetime 객체인 경우
+                                end_time = row[col_mapping["종료시간"]].time()
+                            elif isinstance(row[col_mapping["종료시간"]], time):
+                                # time 객체인 경우
+                                end_time = row[col_mapping["종료시간"]]
+                            elif isinstance(row[col_mapping["종료시간"]], (int, float)):
+                                # 숫자인 경우 (예: 1830 -> 18:30)
+                                time_value = int(row[col_mapping["종료시간"]])
+                                end_hour = time_value // 100
+                                end_minute = time_value % 100
+                                end_time = time(end_hour, end_minute)
+                        except Exception as e:
+                            print(f"퇴근시간 파싱 오류: {str(e)}")
+                            end_time = regular_end
+
+                    if end_time is None:
                         # 종료 시간이 없으면 정규 근무 종료 시간으로 설정
                         end_time = regular_end
 
@@ -517,19 +525,38 @@ class OvertimeAnalyzer(QMainWindow):
                     # 초과근무 여부 확인 (시작 시간이 18시 이후이거나 종료 시간이 9시 이전)
                     is_overtime = start_time >= regular_end or end_time <= regular_start
 
+                    # 직원 이름 정보
+                    employee_name = (
+                        str(row[col_mapping["이름"]])
+                        if pd.notna(row[col_mapping["이름"]])
+                        else "Unknown"
+                    )
+                    # 부서명 정보 추가 (있는 경우)
+                    department = (
+                        str(row["부서명"]) if "부서명" in row and pd.notna(row["부서명"]) else ""
+                    )
+
+                    # 초과근무시간 정보 (있는 경우 사용)
+                    overtime_hours = None
+                    if "초과근무시간" in row and pd.notna(row["초과근무시간"]):
+                        try:
+                            overtime_hours = float(row["초과근무시간"])
+                        except:
+                            pass
+
+                    # 추가 정보 (근무내용)
+                    work_description = (
+                        str(row["근무내용"])
+                        if "근무내용" in row and pd.notna(row["근무내용"])
+                        else ""
+                    )
+
                     # 업무 시간이 정규 근무시간(9-18)에 걸쳐있는 경우, 그 부분은 초과근무가 아님
                     if not is_overtime and (start_time < regular_end and end_time > regular_start):
                         # 시작 시간이 9시 이전이면 초과근무 시작 부분 기록
                         if start_time < regular_start:
                             overtime_start = start_time
                             overtime_end = regular_start
-
-                            # 이름 정보
-                            employee_name = (
-                                row[col_mapping["이름"]]
-                                if "이름" in col_mapping and col_mapping["이름"] is not None
-                                else "Unknown"
-                            )
 
                             overtime_records.append(
                                 {
@@ -539,6 +566,9 @@ class OvertimeAnalyzer(QMainWindow):
                                     "종료시간": overtime_end,
                                     "초과근무유형": "조기출근",
                                     "직원명": employee_name,
+                                    "부서명": department,
+                                    "기록된_초과근무시간": overtime_hours,
+                                    "근무내용": work_description,
                                 }
                             )
 
@@ -546,13 +576,6 @@ class OvertimeAnalyzer(QMainWindow):
                         if end_time > regular_end:
                             overtime_start = regular_end
                             overtime_end = end_time
-
-                            # 이름 정보
-                            employee_name = (
-                                row[col_mapping["이름"]]
-                                if "이름" in col_mapping and col_mapping["이름"] is not None
-                                else "Unknown"
-                            )
 
                             overtime_records.append(
                                 {
@@ -562,6 +585,9 @@ class OvertimeAnalyzer(QMainWindow):
                                     "종료시간": overtime_end,
                                     "초과근무유형": "야근",
                                     "직원명": employee_name,
+                                    "부서명": department,
+                                    "기록된_초과근무시간": overtime_hours,
+                                    "근무내용": work_description,
                                 }
                             )
                     elif is_overtime:
@@ -575,13 +601,6 @@ class OvertimeAnalyzer(QMainWindow):
                         else:
                             overtime_type = "야근"
 
-                        # 이름 정보
-                        employee_name = (
-                            row[col_mapping["이름"]]
-                            if "이름" in col_mapping and col_mapping["이름"] is not None
-                            else "Unknown"
-                        )
-
                         overtime_records.append(
                             {
                                 "업무일": business_date,
@@ -590,6 +609,9 @@ class OvertimeAnalyzer(QMainWindow):
                                 "종료시간": overtime_end,
                                 "초과근무유형": overtime_type,
                                 "직원명": employee_name,
+                                "부서명": department,
+                                "기록된_초과근무시간": overtime_hours,
+                                "근무내용": work_description,
                             }
                         )
 
@@ -681,13 +703,31 @@ class OvertimeAnalyzer(QMainWindow):
                         suspicious_reason = (
                             f"경비 작동 중 {overlap_duration:.1f}시간 초과근무 기록 존재"
                         )
+                        # 초과근무 기록에서 추가 정보 찾기
+                        department = ""
+                        work_content = ""
+
+                        # 해당 직원의 초과근무 기록 중에서 부가 정보 찾기
+                        for ovt_record in overtime_records:
+                            if (
+                                ovt_record["직원명"] == employee_name
+                                and ovt_record["업무일"] == business_date
+                            ):
+                                if "부서명" in ovt_record and ovt_record["부서명"]:
+                                    department = ovt_record["부서명"]
+                                if "근무내용" in ovt_record and ovt_record["근무내용"]:
+                                    work_content = ovt_record["근무내용"]
+                                break
+
                         suspicious_records.append(
                             {
                                 "날짜": business_date,
                                 "직원명": employee_name,
+                                "부서명": department,
                                 "초과근무시간": f"{overtime_start.strftime('%H:%M')}-{overtime_end.strftime('%H:%M')}",
                                 "경비상태": "경비 작동 중",
                                 "의심사유": suspicious_reason,
+                                "근무내용": work_content,
                             }
                         )
 
@@ -701,6 +741,14 @@ class OvertimeAnalyzer(QMainWindow):
 
         if not suspicious_records:
             return
+
+        # 테이블 컬럼 수 조정 (추가 정보를 위해)
+        self.table.setColumnCount(
+            7
+        )  # 날짜, 직원명, 부서명, 초과근무시간, 경비상태, 의심사유, 근무내용
+        self.table.setHorizontalHeaderLabels(
+            ["날짜", "직원명", "부서명", "초과근무시간", "경비상태", "의심사유", "근무내용"]
+        )
 
         # 테이블에 행 추가
         for i, record in enumerate(suspicious_records):
@@ -718,17 +766,25 @@ class OvertimeAnalyzer(QMainWindow):
             name_item = QTableWidgetItem(str(record["직원명"]))
             self.table.setItem(i, 1, name_item)
 
+            # 부서명
+            dept_item = QTableWidgetItem(str(record.get("부서명", "")))
+            self.table.setItem(i, 2, dept_item)
+
             # 초과근무 시간
             time_item = QTableWidgetItem(str(record["초과근무시간"]))
-            self.table.setItem(i, 2, time_item)
+            self.table.setItem(i, 3, time_item)
 
             # 경비 상태
             security_item = QTableWidgetItem(str(record["경비상태"]))
-            self.table.setItem(i, 3, security_item)
+            self.table.setItem(i, 4, security_item)
 
             # 의심 사유
             reason_item = QTableWidgetItem(str(record["의심사유"]))
-            self.table.setItem(i, 4, reason_item)
+            self.table.setItem(i, 5, reason_item)
+
+            # 근무내용
+            content_item = QTableWidgetItem(str(record.get("근무내용", "")))
+            self.table.setItem(i, 6, content_item)
 
     def export_results(self):
         if not self.suspicious_records:
@@ -747,17 +803,21 @@ class OvertimeAnalyzer(QMainWindow):
                 for row in range(self.table.rowCount()):
                     date = self.table.item(row, 0).text()
                     employee = self.table.item(row, 1).text()
-                    overtime = self.table.item(row, 2).text()
-                    security = self.table.item(row, 3).text()
-                    reason = self.table.item(row, 4).text()
+                    department = self.table.item(row, 2).text() if self.table.item(row, 2) else ""
+                    overtime = self.table.item(row, 3).text()
+                    security = self.table.item(row, 4).text()
+                    reason = self.table.item(row, 5).text()
+                    work_content = self.table.item(row, 6).text() if self.table.item(row, 6) else ""
 
                     data.append(
                         {
                             "날짜": date,
                             "직원명": employee,
+                            "부서명": department,
                             "초과근무 시간": overtime,
                             "경비상태": security,
                             "의심 사유": reason,
+                            "근무내용": work_content,
                         }
                     )
 
