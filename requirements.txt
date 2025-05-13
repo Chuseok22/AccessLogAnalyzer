@@ -3,3 +3,4 @@ openpyxl
 PyQt5
 pyinstaller
 black
+xlrd

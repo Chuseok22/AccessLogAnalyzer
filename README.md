@@ -38,11 +38,13 @@
 ### 방법 2: 소스 코드에서 실행 (개발자용)
 
 1. Python과 필요한 라이브러리를 설치합니다:
+
    ```
    pip install -r requirements.txt
    ```
 
 2. 프로그램을 실행합니다:
+
    ```
    python access_log_analyzer.py
    ```
