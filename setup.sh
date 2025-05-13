@@ -2,7 +2,7 @@
 
 # 스크립트 위치 확인
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit 1
 
 echo "출입 기록 분석기 초기 설정을 시작합니다..."
 

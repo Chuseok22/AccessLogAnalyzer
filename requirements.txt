@@ -2,3 +2,4 @@ pandas
 openpyxl
 PyQt5
 pyinstaller
+black
