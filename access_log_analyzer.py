@@ -98,7 +98,15 @@ class AccessLogAnalyzer(QMainWindow):
             self.file_label.setText(file_path)
             self.analyze_button.setEnabled(True)
             try:
-                self.df = pd.read_excel(file_path)
+                # XLS 파일 지원을 위해 엔진 자동 감지 활성화
+                file_ext = os.path.splitext(file_path)[1].lower()
+                if file_ext == ".xls":
+                    # 구형 Excel 파일은 xlrd 엔진 사용
+                    self.df = pd.read_excel(file_path, engine="xlrd")
+                else:
+                    # 신형 Excel 파일은 openpyxl 사용
+                    self.df = pd.read_excel(file_path, engine="openpyxl")
+
                 QMessageBox.information(
                     self,
                     "성공",
