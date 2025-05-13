@@ -28,7 +28,7 @@ jobs:
       run: python build.py
       
     - name: Upload EXE as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: 출입기록분석기-exe
         path: dist/출입기록분석기.exe
