@@ -40,14 +40,6 @@ jobs:
           name: 출입기록분석기-exe
           path: dist/출입기록분석기.exe
 
-      - name: Read Release Notes
-        id: release_notes
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: |
-          NOTES=$(cat RELEASE_NOTES.md)
-          echo "notes=$NOTES" >> $GITHUB_OUTPUT
-
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
@@ -55,7 +47,6 @@ jobs:
         with:
           files: dist/출입기록분석기.exe
           name: 출입기록분석기 ${{ github.ref_name }}
-          body: ${{ steps.release_notes.outputs.notes }}
           draft: false
           prerelease: false
         env:
