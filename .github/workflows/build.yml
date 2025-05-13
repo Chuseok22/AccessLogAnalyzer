@@ -34,29 +34,54 @@ jobs:
       - name: Build Access Log Analyzer EXE
         run: python build.py
 
+      - name: Verify Access Log Analyzer EXE
+        run: |
+          dir dist
+          if not exist "dist\access_log_analyzer.exe" (
+            echo "access_log_analyzer.exe not found!"
+            exit 1
+          )
+
       - name: Build Overtime Analyzer EXE
         run: python build_overtime.py
+
+      - name: Verify Overtime Analyzer EXE
+        run: |
+          dir dist
+          if not exist "dist\overtime_analyzer.exe" (
+            echo "overtime_analyzer.exe not found!"
+            exit 1
+          )
 
       - name: Upload Access Log Analyzer EXE as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 출입기록분석기-exe
-          path: dist/출입기록분석기.exe
+          name: access-log-analyzer-exe
+          path: dist/access_log_analyzer.exe
+
+      - name: Prepare Release Files
+        run: |
+          mkdir -p release_files
+          copy dist\access_log_analyzer.exe release_files\
+          copy dist\overtime_analyzer.exe release_files\
+          dir release_files
 
       - name: Upload Overtime Analyzer EXE as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 초과근무분석기-exe
-          path: dist/초과근무분석기.exe
+          name: overtime-analyzer-exe
+          path: dist/overtime_analyzer.exe
+          if-no-files-found: error
 
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
+        uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/출입기록분석기.exe
-            dist/초과근무분석기.exe
+            release_files/access_log_analyzer.exe
+            release_files/overtime_analyzer.exe
           name: 출입기록분석기 및 초과근무분석기 ${{ github.ref_name }}
           draft: false
           prerelease: false

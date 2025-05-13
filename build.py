@@ -16,7 +16,7 @@ main_script = os.path.join(script_path, "access_log_analyzer.py")
 PyInstaller.__main__.run(
     [
         main_script,
-        "--name=출입기록분석기",
+        "--name=access_log_analyzer",  # 영문 이름 사용
         "--onefile",
         "--windowed",
         "--icon=NONE",
