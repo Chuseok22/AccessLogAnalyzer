@@ -12,7 +12,7 @@ except AttributeError:
 
 # 현재 스크립트 경로
 script_path = os.path.abspath(os.path.dirname(__file__))
-main_script = os.path.join(script_path, "run_analyzer.py")
+main_script = os.path.join(script_path, "overtime_analyzer.py")
 
 # 메인 스크립트 존재 확인
 if not os.path.exists(main_script):
