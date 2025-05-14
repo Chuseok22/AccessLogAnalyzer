@@ -1371,6 +1371,7 @@ class OvertimeAnalyzer(QMainWindow):
 
         # 날짜별 경비 상태 시퀀스 데이터 (경비시작/해제 상세 기록)
         security_sequences_by_day = {}
+        sequence_data = []  # 변수 미리 초기화
 
         # 날짜 간격 계산 (필터 기간 내 모든 날짜를 처리)
         delta = end_date - start_date
