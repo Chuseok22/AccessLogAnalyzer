@@ -110,10 +110,19 @@ class OvertimeAnalyzer(QMainWindow):
         # 결과 테이블
         self.table = QTableWidget()
         self.table.setColumnCount(
-            7
-        )  # 날짜, 직원명, 부서명, 초과근무시간, 경비상태, 의심사유, 근무내용
+            8
+        )  # 날짜, 직원명, 부서명, 초과근무시간, 경비상태, 의심사유, 근무내용, 휴일여부
         self.table.setHorizontalHeaderLabels(
-            ["날짜", "직원명", "부서명", "초과근무 시간", "경비상태", "의심 사유", "근무내용"]
+            [
+                "날짜",
+                "직원명",
+                "부서명",
+                "초과근무 시간",
+                "경비상태",
+                "의심 사유",
+                "근무내용",
+                "휴일여부",
+            ]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
@@ -420,6 +429,44 @@ class OvertimeAnalyzer(QMainWindow):
             print(traceback.format_exc())
             raise
 
+    def is_korean_holiday(self, date):
+        """한국 공휴일 여부를 판단합니다."""
+        # 매년 1월 1일(신정)
+        if date.month == 1 and date.day == 1:
+            return True
+
+        # 매년 3월 1일(삼일절)
+        if date.month == 3 and date.day == 1:
+            return True
+
+        # 매년 5월 5일(어린이날)
+        if date.month == 5 and date.day == 5:
+            return True
+
+        # 매년 6월 6일(현충일)
+        if date.month == 6 and date.day == 6:
+            return True
+
+        # 매년 8월 15일(광복절)
+        if date.month == 8 and date.day == 15:
+            return True
+
+        # 매년 10월 3일(개천절)
+        if date.month == 10 and date.day == 3:
+            return True
+
+        # 매년 10월 9일(한글날)
+        if date.month == 10 and date.day == 9:
+            return True
+
+        # 매년 12월 25일(크리스마스)
+        if date.month == 12 and date.day == 25:
+            return True
+
+        # 설날, 추석 등 음력 공휴일은 매년 날짜가 달라지므로 단순화를 위해 생략
+
+        return False
+
     def process_overtime_log(self, df):
         """초과근무 기록을 처리합니다."""
         try:
@@ -492,6 +539,33 @@ class OvertimeAnalyzer(QMainWindow):
                 df[col_mapping["날짜"]], format="%Y-%m-%d", errors="coerce"
             )
 
+            def parse_time(time_value, default_time):
+                """시간 값을 파싱하여 time 객체로 반환합니다."""
+                if pd.isna(time_value):
+                    return default_time
+
+                try:
+                    if isinstance(time_value, str):
+                        time_str = time_value.strip()
+                        parts = time_str.split(":")
+                        if len(parts) >= 2:
+                            hour = int(parts[0])
+                            minute = int(parts[1])
+                            return time(hour, minute)
+                        else:
+                            print(f"시간 형식 오류 (HH:mm 형식이 아님): {time_str}")
+                            return default_time
+                    elif isinstance(time_value, datetime):
+                        return time_value.time()
+                    elif isinstance(time_value, time):
+                        return time_value
+                    else:
+                        print(f"지원하지 않는 시간 형식: {type(time_value)}")
+                        return default_time
+                except Exception as e:
+                    print(f"시간 파싱 오류: {str(e)}")
+                    return default_time
+
             # 시간 데이터 유효성 검사
             # 시간 형식 검사 함수 (HH:mm 형식 고정)
             def is_valid_time_format(time_str):
@@ -539,74 +613,14 @@ class OvertimeAnalyzer(QMainWindow):
                     work_date = row["날짜_datetime"].date()
 
                     # 출근시간 처리 (HH:mm 고정 형식)
-                    start_time = None
-                    if pd.notna(row[col_mapping["시작시간"]]):
-                        try:
-                            # 문자열로 시간 처리 (HH:mm 고정 형식)
-                            if isinstance(row[col_mapping["시작시간"]], str):
-                                time_str = row[col_mapping["시작시간"]].strip()
-                                # HH:mm 형식 처리
-                                start_parts = time_str.split(":")
-                                if len(start_parts) >= 2:
-                                    start_hour = int(start_parts[0])
-                                    start_minute = int(start_parts[1])
-                                    start_time = time(start_hour, start_minute)
-                                else:
-                                    # 형식이 맞지 않으면 기본값 사용
-                                    print(f"출근시간 형식 오류 (HH:mm 형식이 아님): {time_str}")
-                                    start_time = regular_start
-                            elif isinstance(row[col_mapping["시작시간"]], datetime):
-                                # datetime 객체인 경우
-                                start_time = row[col_mapping["시작시간"]].time()
-                            elif isinstance(row[col_mapping["시작시간"]], time):
-                                # time 객체인 경우
-                                start_time = row[col_mapping["시작시간"]]
-                            else:
-                                # 다른 형식은 지원하지 않음
-                                print(
-                                    f"지원하지 않는 출근시간 형식: {type(row[col_mapping['시작시간']])}"
-                                )
-                                start_time = regular_start
-                        except Exception as e:
-                            print(f"출근시간 파싱 오류: {str(e)}")
-                            start_time = regular_start
+                    start_time = parse_time(row[col_mapping["시작시간"]], regular_start)
 
                     if start_time is None:
                         # 시작 시간이 없으면 정규 근무 시작 시간으로 설정
                         start_time = regular_start
 
                     # 퇴근시간 처리 (HH:mm 고정 형식)
-                    end_time = None
-                    if pd.notna(row[col_mapping["종료시간"]]):
-                        try:
-                            # 문자열로 시간 처리 (HH:mm 고정 형식)
-                            if isinstance(row[col_mapping["종료시간"]], str):
-                                time_str = row[col_mapping["종료시간"]].strip()
-                                # HH:mm 형식 처리
-                                end_parts = time_str.split(":")
-                                if len(end_parts) >= 2:
-                                    end_hour = int(end_parts[0])
-                                    end_minute = int(end_parts[1])
-                                    end_time = time(end_hour, end_minute)
-                                else:
-                                    # 형식이 맞지 않으면 기본값 사용
-                                    print(f"퇴근시간 형식 오류 (HH:mm 형식이 아님): {time_str}")
-                                    end_time = regular_end
-                            elif isinstance(row[col_mapping["종료시간"]], datetime):
-                                # datetime 객체인 경우
-                                end_time = row[col_mapping["종료시간"]].time()
-                            elif isinstance(row[col_mapping["종료시간"]], time):
-                                # time 객체인 경우
-                                end_time = row[col_mapping["종료시간"]]
-                            else:
-                                # 다른 형식은 지원하지 않음
-                                print(
-                                    f"지원하지 않는 퇴근시간 형식: {type(row[col_mapping['종료시간']])}"
-                                )
-                                end_time = regular_end
-                        except Exception as e:
-                            print(f"퇴근시간 파싱 오류: {str(e)}")
-                            end_time = regular_end
+                    end_time = parse_time(row[col_mapping["종료시간"]], regular_end)
 
                     if end_time is None:
                         # 종료 시간이 없으면 정규 근무 종료 시간으로 설정
@@ -619,8 +633,42 @@ class OvertimeAnalyzer(QMainWindow):
                     if end_time < time(4, 0):
                         business_date = work_date - timedelta(days=1)
 
-                    # 초과근무 여부 확인 (시작 시간이 18시 이후이거나 종료 시간이 9시 이전)
-                    is_overtime = start_time >= regular_end or end_time <= regular_start
+                    # 휴일 여부 확인 (F열 데이터만 사용)
+                    is_holiday = False
+
+                    # F열(휴일여부) 데이터 확인
+                    if "휴일여부" in df.columns and pd.notna(row["휴일여부"]):
+                        holiday_value = str(row["휴일여부"]).strip().lower()
+                        # "Y", "휴일", "공휴일", "토요일", "일요일" 등의 문자가 포함되어 있으면 휴일로 판단
+                        holiday_keywords = ["y", "휴", "공휴", "토요일", "일요일"]
+                        is_holiday = any(x in holiday_value for x in holiday_keywords)
+                        matched_keywords = [x for x in holiday_keywords if x in holiday_value]
+                        if matched_keywords:
+                            print(
+                                f"[휴일판단] 날짜: {business_date}, 휴일여부: {is_holiday}, F열 데이터: '{row.get('휴일여부', '데이터 없음')}', 일치 키워드: {matched_keywords}"
+                            )
+                        else:
+                            print(
+                                f"[평일판단] 날짜: {business_date}, 평일근무, F열 데이터: '{row.get('휴일여부', '데이터 없음')}'"
+                            )
+                    else:
+                        # F열 데이터가 없거나 누락된 경우 기본값은 평일(False)로 설정
+                        print(
+                            f"[데이터없음] 날짜: {business_date}, 평일로 처리(기본값), F열 데이터: '{row.get('휴일여부', '데이터 없음')}'"
+                        )
+
+                    # 디버그 정보 출력
+                    if is_holiday:
+                        print(
+                            f"[휴일처리] {business_date} - {row.get('성명', '이름없음')} - 휴일로 처리됨"
+                        )
+
+                    # 초과근무 여부 확인
+                    # 휴일인 경우: 모든 시간이 초과근무 시간
+                    # 평일인 경우: 시작 시간이 18시 이후이거나 종료 시간이 9시 이전인 경우만 초과근무
+                    is_overtime = is_holiday or (
+                        start_time >= regular_end or end_time <= regular_start
+                    )
 
                     # 직원 이름 정보
                     employee_name = (
@@ -651,55 +699,11 @@ class OvertimeAnalyzer(QMainWindow):
                     if "근무내용" in df.columns and pd.notna(row["근무내용"]):
                         work_description = str(row["근무내용"]).strip()
 
-                    # 업무 시간이 정규 근무시간(9-18)에 걸쳐있는 경우, 그 부분은 초과근무가 아님
-                    if not is_overtime and (start_time < regular_end and end_time > regular_start):
-                        # 시작 시간이 9시 이전이면 초과근무 시작 부분 기록
-                        if start_time < regular_start:
-                            overtime_start = start_time
-                            overtime_end = regular_start
-
-                            overtime_records.append(
-                                {
-                                    "업무일": business_date,
-                                    "날짜": work_date,
-                                    "시작시간": overtime_start,
-                                    "종료시간": overtime_end,
-                                    "초과근무유형": "조기출근",
-                                    "직원명": employee_name,
-                                    "부서명": department,
-                                    "기록된_초과근무시간": overtime_hours,
-                                    "근무내용": work_description,
-                                }
-                            )
-
-                        # 종료 시간이 18시 이후면 초과근무 종료 부분 기록
-                        if end_time > regular_end:
-                            overtime_start = regular_end
-                            overtime_end = end_time
-
-                            overtime_records.append(
-                                {
-                                    "업무일": business_date,
-                                    "날짜": work_date,
-                                    "시작시간": overtime_start,
-                                    "종료시간": overtime_end,
-                                    "초과근무유형": "야근",
-                                    "직원명": employee_name,
-                                    "부서명": department,
-                                    "기록된_초과근무시간": overtime_hours,
-                                    "근무내용": work_description,
-                                }
-                            )
-                    elif is_overtime:
-                        # 전체가 초과근무인 경우
+                    # 휴일인 경우 모든 시간을 초과근무로 처리
+                    if is_holiday:
+                        # 휴일 근무는 전체가 초과근무
                         overtime_start = start_time
                         overtime_end = end_time
-
-                        # 시간대에 따른 초과근무 유형 결정
-                        if overtime_start < regular_start:
-                            overtime_type = "조기출근"
-                        else:
-                            overtime_type = "야근"
 
                         overtime_records.append(
                             {
@@ -707,13 +711,84 @@ class OvertimeAnalyzer(QMainWindow):
                                 "날짜": work_date,
                                 "시작시간": overtime_start,
                                 "종료시간": overtime_end,
-                                "초과근무유형": overtime_type,
+                                "초과근무유형": "휴일근무",
                                 "직원명": employee_name,
                                 "부서명": department,
                                 "기록된_초과근무시간": overtime_hours,
                                 "근무내용": work_description,
+                                "휴일여부": True,
                             }
                         )
+                    # 평일인 경우 정규 근무시간(9-18)을 제외한 시간만 초과근무로 처리
+                    else:
+                        # 업무 시간이 정규 근무시간(9-18)에 걸쳐있는 경우, 그 부분은 초과근무가 아님
+                        if not is_overtime and (
+                            start_time < regular_end and end_time > regular_start
+                        ):
+                            # 시작 시간이 9시 이전이면 초과근무 시작 부분 기록
+                            if start_time < regular_start:
+                                overtime_start = start_time
+                                overtime_end = regular_start
+
+                                overtime_records.append(
+                                    {
+                                        "업무일": business_date,
+                                        "날짜": work_date,
+                                        "시작시간": overtime_start,
+                                        "종료시간": overtime_end,
+                                        "초과근무유형": "조기출근",
+                                        "직원명": employee_name,
+                                        "부서명": department,
+                                        "기록된_초과근무시간": overtime_hours,
+                                        "근무내용": work_description,
+                                        "휴일여부": False,
+                                    }
+                                )
+
+                            # 종료 시간이 18시 이후면 초과근무 종료 부분 기록
+                            if end_time > regular_end:
+                                overtime_start = regular_end
+                                overtime_end = end_time
+
+                                overtime_records.append(
+                                    {
+                                        "업무일": business_date,
+                                        "날짜": work_date,
+                                        "시작시간": overtime_start,
+                                        "종료시간": overtime_end,
+                                        "초과근무유형": "야근",
+                                        "직원명": employee_name,
+                                        "부서명": department,
+                                        "기록된_초과근무시간": overtime_hours,
+                                        "근무내용": work_description,
+                                        "휴일여부": False,
+                                    }
+                                )
+                        elif is_overtime:
+                            # 전체가 초과근무인 경우
+                            overtime_start = start_time
+                            overtime_end = end_time
+
+                            # 시간대에 따른 초과근무 유형 결정
+                            if overtime_start < regular_start:
+                                overtime_type = "조기출근"
+                            else:
+                                overtime_type = "야근"
+
+                            overtime_records.append(
+                                {
+                                    "업무일": business_date,
+                                    "날짜": work_date,
+                                    "시작시간": overtime_start,
+                                    "종료시간": overtime_end,
+                                    "초과근무유형": overtime_type,
+                                    "직원명": employee_name,
+                                    "부서명": department,
+                                    "기록된_초과근무시간": overtime_hours,
+                                    "근무내용": work_description,
+                                    "휴일여부": False,
+                                }
+                            )
 
                 except Exception as e:
                     print(f"초과근무 기록 처리 중 오류 (무시됨): {str(e)}")
@@ -765,71 +840,160 @@ class OvertimeAnalyzer(QMainWindow):
             # 경비 기록을 시간순으로 정렬
             security_status.sort(key=lambda x: x["시간"])
 
-            # 경비 상태 추적
-            current_status = "시작"  # 기본값은 경비 활성화 상태(보수적 접근)
+            # 경비 상태 변화 기록
+            security_changes = []
 
-            # 초과근무 시작 시간 이전의 마지막 경비 상태 확인
+            # 경비 상태 기록을 시간 순으로 정렬하고 상태 변화 추적
             for record in security_status:
                 record_time = datetime.strptime(record["시간"], "%Y-%m-%d %H:%M")
+                security_changes.append({"시간": record_time, "상태": record["상태"]})
 
-                if record_time < overtime_start_dt:
-                    current_status = record["상태"]
+            # 경비 변화가 없으면 다음 기록으로 넘어감
+            if not security_changes:
+                continue
+
+            # 초기 상태 설정
+            security_changes.sort(key=lambda x: x["시간"])
+
+            # 의심 시간 구간 계산
+            suspicious_intervals = []
+
+            # CASE 1: 경비 설정(시작) 후 초과근무가 계속된 경우 감지
+            for i, change in enumerate(security_changes):
+                if change["상태"] == "시작":  # 경비 설정(시작)
+                    security_set_time = change["시간"]
+                    # 이 시각 이후의 초과근무는 의심스러움
+                    if security_set_time < overtime_end_dt:
+                        suspicious_start = max(security_set_time, overtime_start_dt)
+                        suspicious_end = overtime_end_dt
+                        suspicious_intervals.append((suspicious_start, suspicious_end))
+                        # 디버그 출력
+                        print(
+                            f"[의심기록] {business_date} - {employee_name} - 경비설정({security_set_time.strftime('%H:%M:%S')}) 이후 초과근무({suspicious_start.strftime('%H:%M:%S')}-{suspicious_end.strftime('%H:%M:%S')})"
+                        )
+                        # 3월 27일 예시 케이스 특별 처리 (21:16 경비 설정, 23:00 초과근무)
+                        if (
+                            business_date.strftime("%Y-%m-%d") == "2025-03-27"
+                            and security_set_time.hour == 21
+                        ):
+                            print(
+                                f"[주의] 3월 27일 사례 감지: 경비 설정 {security_set_time.strftime('%H:%M:%S')}에 이루어졌으나 {suspicious_end.strftime('%H:%M')}까지 초과근무 기록 존재"
+                            )
+
+            # CASE 2: 초과근무 시간이 경비 해제 없이 진행된 경우
+            # 초과근무 시작 시간 이전의 마지막 경비 상태 확인
+            current_status = "시작"  # 기본값은 경비 활성화 상태(보수적 접근)
+
+            for change in security_changes:
+                if change["시간"] < overtime_start_dt:
+                    current_status = change["상태"]
                 else:
                     break
 
-            # 경비가 활성화된 상태에서 초과근무 기록이 있는지 확인
+            # 경비 활성화 상태로 초과근무가 시작된 경우
             if current_status == "시작":
                 # 경비가 활성화된 동안의 초과근무 시간 계산
-                overlap_start = overtime_start_dt
-                overlap_end = overtime_end_dt
+                suspicious_start = overtime_start_dt
+                suspicious_end = None
 
                 # 초과근무 중 경비 상태가 변경되는지 확인
-                for record in security_status:
-                    record_time = datetime.strptime(record["시간"], "%Y-%m-%d %H:%M")
-
-                    if overtime_start_dt <= record_time <= overtime_end_dt:
-                        if record["상태"] == "해제":
+                for change in security_changes:
+                    if overtime_start_dt <= change["시간"] <= overtime_end_dt:
+                        if change["상태"] == "해제":
                             # 경비가 해제되면 중첩 시간 종료
-                            overlap_end = record_time
+                            suspicious_end = change["시간"]
                             break
 
-                # 경비 활성화 상태에서 초과근무 시간이 있으면 의심 기록
-                if overlap_start < overlap_end:
-                    overlap_duration = (
-                        overlap_end - overlap_start
-                    ).seconds / 3600  # 시간 단위로 변환
+                # 경비 해제가 없으면 초과근무 종료까지 의심 구간
+                if suspicious_end is None:
+                    suspicious_end = overtime_end_dt
 
-                    if overlap_duration >= 0.25:  # 15분(0.25시간) 이상 중첩되면 의심 기록으로 간주
-                        suspicious_reason = (
-                            f"경비 작동 중 {overlap_duration:.1f}시간 초과근무 기록 존재"
-                        )
-                        # 초과근무 기록에서 추가 정보 찾기
-                        department = ""
-                        work_content = ""
+                suspicious_intervals.append((suspicious_start, suspicious_end))
 
-                        # 해당 직원의 초과근무 기록 중에서 부가 정보 찾기
-                        for ovt_record in overtime_records:
-                            if (
-                                ovt_record["직원명"] == employee_name
-                                and ovt_record["업무일"] == business_date
-                            ):
-                                if "부서명" in ovt_record and ovt_record["부서명"]:
-                                    department = ovt_record["부서명"]
-                                if "근무내용" in ovt_record and ovt_record["근무내용"]:
-                                    work_content = ovt_record["근무내용"]
-                                break
+            # 모든 의심 구간에 대해 총 중첩 시간 계산
+            total_suspicious_hours = 0
+            suspicious_periods = []
 
-                        suspicious_records.append(
-                            {
-                                "날짜": business_date,
-                                "직원명": employee_name,
-                                "부서명": department,
-                                "초과근무시간": f"{overtime_start.strftime('%H:%M')}-{overtime_end.strftime('%H:%M')}",
-                                "경비상태": "경비 작동 중",
-                                "의심사유": suspicious_reason,
-                                "근무내용": work_content,
-                            }
-                        )
+            for start_time, end_time in suspicious_intervals:
+                if start_time < end_time:  # 유효한 구간만 처리
+                    duration_hours = (end_time - start_time).seconds / 3600
+                    if duration_hours >= 0.25:  # 15분(0.25시간) 이상 중첩만 고려
+                        total_suspicious_hours += duration_hours
+                        start_str = start_time.strftime("%H:%M")
+                        end_str = end_time.strftime("%H:%M")
+                        suspicious_periods.append(f"{start_str}-{end_str}")
+
+            # 의심 시간이 있으면 기록
+            if total_suspicious_hours >= 0.25:  # 총 15분 이상 의심 시간
+                period_str = ", ".join(suspicious_periods)
+                suspicious_reason = f"경비 작동 중 총 {total_suspicious_hours:.1f}시간 초과근무 기록 존재 ({period_str})"
+
+                # 디버그 정보: 의심 세부 정보
+                print(f"[의심결과] {business_date} - {employee_name}")
+                print(
+                    f"  ├─ 초과근무: {overtime_start_dt.strftime('%H:%M')}-{overtime_end_dt.strftime('%H:%M')}"
+                )
+                print(f"  ├─ 의심구간: {period_str}")
+                print(f"  └─ 총 의심시간: {total_suspicious_hours:.2f}시간")
+
+                # 초과근무 기록에서 추가 정보 찾기
+                department = ""
+                work_content = ""
+
+                # 해당 직원의 초과근무 기록 중에서 부가 정보 찾기
+                for ovt_record in overtime_records:
+                    if (
+                        ovt_record["직원명"] == employee_name
+                        and ovt_record["업무일"] == business_date
+                    ):
+                        if "부서명" in ovt_record and ovt_record["부서명"]:
+                            department = ovt_record["부서명"]
+                        if "근무내용" in ovt_record and ovt_record["근무내용"]:
+                            work_content = ovt_record["근무내용"]
+                        break
+
+                # 휴일 여부 파악
+                is_holiday = False
+                for ovt_record in overtime_records:
+                    if (
+                        ovt_record["직원명"] == employee_name
+                        and ovt_record["업무일"] == business_date
+                    ):
+                        if "휴일여부" in ovt_record:
+                            is_holiday = ovt_record["휴일여부"]
+                        break
+
+                # 휴일 여부에 따라 의심 사유 보완
+                if is_holiday:
+                    suspicious_reason += " (휴일 근무)"
+
+                # 결과에 추가할 의심 정보 준비
+                security_info = "경비 작동 중"
+
+                # 경비 설정 시간 정보가 있으면 포함
+                security_set_times = []
+                for change in security_changes:
+                    if (
+                        change["상태"] == "시작"
+                        and overtime_start_dt <= change["시간"] <= overtime_end_dt
+                    ):
+                        security_set_times.append(change["시간"].strftime("%H:%M:%S"))
+
+                if security_set_times:
+                    security_info += f" (경비설정시각: {', '.join(security_set_times)})"
+
+                suspicious_records.append(
+                    {
+                        "날짜": business_date,
+                        "직원명": employee_name,
+                        "부서명": department,
+                        "초과근무시간": f"{overtime_start.strftime('%H:%M')}-{overtime_end.strftime('%H:%M')}",
+                        "경비상태": security_info,
+                        "의심사유": suspicious_reason,
+                        "근무내용": work_content,
+                        "휴일여부": "휴일" if is_holiday else "평일",
+                    }
+                )
 
         return suspicious_records
 
@@ -844,10 +1008,19 @@ class OvertimeAnalyzer(QMainWindow):
 
         # 테이블 컬럼 수 조정 (추가 정보를 위해)
         self.table.setColumnCount(
-            7
-        )  # 날짜, 직원명, 부서명, 초과근무시간, 경비상태, 의심사유, 근무내용
+            8
+        )  # 날짜, 직원명, 부서명, 초과근무시간, 경비상태, 의심사유, 근무내용, 휴일여부
         self.table.setHorizontalHeaderLabels(
-            ["날짜", "직원명", "부서명", "초과근무시간", "경비상태", "의심사유", "근무내용"]
+            [
+                "날짜",
+                "직원명",
+                "부서명",
+                "초과근무시간",
+                "경비상태",
+                "의심사유",
+                "근무내용",
+                "휴일여부",
+            ]
         )
 
         # 테이블에 행 추가
@@ -886,6 +1059,10 @@ class OvertimeAnalyzer(QMainWindow):
             content_item = QTableWidgetItem(str(record.get("근무내용", "")))
             self.table.setItem(i, 6, content_item)
 
+            # 휴일여부
+            holiday_item = QTableWidgetItem(str(record.get("휴일여부", "평일")))
+            self.table.setItem(i, 7, holiday_item)
+
     def export_results(self):
         if not self.suspicious_records:
             QMessageBox.information(self, "내보내기", "내보낼 결과가 없습니다.")
@@ -909,6 +1086,10 @@ class OvertimeAnalyzer(QMainWindow):
                     reason = self.table.item(row, 5).text()
                     work_content = self.table.item(row, 6).text() if self.table.item(row, 6) else ""
 
+                    holiday_status = (
+                        self.table.item(row, 7).text() if self.table.item(row, 7) else "평일"
+                    )
+
                     data.append(
                         {
                             "날짜": date,
@@ -918,6 +1099,7 @@ class OvertimeAnalyzer(QMainWindow):
                             "경비상태": security,
                             "의심 사유": reason,
                             "근무내용": work_content,
+                            "휴일여부": holiday_status,
                         }
                     )
 
