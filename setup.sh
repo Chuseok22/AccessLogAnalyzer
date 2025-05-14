@@ -25,20 +25,18 @@ echo "필요한 패키지를 설치합니다..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
-echo "설정이 완료되었습니다!"
-echo "프로그램을 실행하시겠습니까?"
-echo "1. 출입 기록 분석기"
-echo "2. 초과근무 분석기"
-echo "3. 나중에 실행"
-read -p "선택 (1/2/3): " run_choice
+# 실행 권한 부여
+echo "실행 파일 권한을 설정합니다..."
+chmod +x overtime_analyzer.py
+chmod +x run.sh
 
-if [ "$run_choice" = "1" ]; then
-    python access_log_analyzer.py
-elif [ "$run_choice" = "2" ]; then
+echo "설정이 완료되었습니다!"
+echo "초과근무 분석 프로그램을 실행하시겠습니까?"
+read -p "실행하려면 Y, 나중에 실행하려면 N을 입력하세요 (Y/N): " run_choice
+
+if [[ "$run_choice" = "Y" || "$run_choice" = "y" ]]; then
     python overtime_analyzer.py
 else
     echo ""
-    echo "나중에 실행하려면:"
-    echo "- 출입 기록 분석: './run.sh' 실행"
-    echo "- 초과근무 분석: './run_overtime.sh' 실행"
+    echo "나중에 실행하려면 './run.sh' 실행"
 fi
