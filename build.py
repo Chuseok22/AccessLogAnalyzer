@@ -40,7 +40,7 @@ if args.clean_build:
 # PyInstaller 옵션
 pyinstaller_args = [
     main_script,
-    "--name=초과근무분석기",
+    "--name=OvertimeAnalyzer",
     "--onefile",
     "--clean",
     "--distpath={}".format(dist_path),  # 명시적으로 dist 경로 지정
@@ -66,7 +66,9 @@ try:
     else:  # Linux
         exe_extension = ""
 
-    exe_file = os.path.join(dist_path, f"OvertimeAnalyzer{exe_extension}")
+    # 빌드된 파일의 이름은 --name 옵션으로 지정한 이름과 같음
+    exe_name = "OvertimeAnalyzer"
+    exe_file = os.path.join(dist_path, f"{exe_name}{exe_extension}")
 
     if os.path.exists(exe_file):
         print(f"빌드 성공: {exe_file}")
