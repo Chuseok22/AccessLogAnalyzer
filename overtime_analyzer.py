@@ -1,6 +1,6 @@
 import sys
 import pandas as pd
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, date
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -16,12 +16,15 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QGroupBox,
     QDateEdit,
+    QInputDialog,
 )
 from PyQt5.QtCore import Qt, QDate
 import os
 
 
 class OvertimeAnalyzer(QMainWindow):
+
+    # OvertimeAnalyzer 객체 초기화 및 GUI 창의 기본 설정
     def __init__(self):
         super().__init__()
         self.setWindowTitle("초과근무 분석기")
@@ -31,6 +34,7 @@ class OvertimeAnalyzer(QMainWindow):
         self.suspicious_records = []
         self.init_ui()
 
+    # GUI의 레이아웃과 위젯 구성
     def init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -76,7 +80,7 @@ class OvertimeAnalyzer(QMainWindow):
 
         self.start_date = QDateEdit()
         self.start_date.setCalendarPopup(True)
-        self.start_date.setDate(QDate.currentDate().addMonths(-1))
+        self.start_date.setDate(QDate.currentDate().addYears(-1))
 
         self.end_date = QDateEdit()
         self.end_date.setCalendarPopup(True)
@@ -134,13 +138,14 @@ class OvertimeAnalyzer(QMainWindow):
         main_layout.addWidget(self.table)
         main_layout.addWidget(self.export_button)
 
+    # 사용자 엑셀 파일 선택 및 로드
     def browse_file(self, file_type):
         options = QFileDialog.Options()
         file_path, _ = QFileDialog.getOpenFileName(
             self, "엑셀 파일 선택", "", "Excel Files (*.xlsx *.xls)", options=options
         )
 
-        if file_path:
+        if file_path:  # file_path 가 존재하는 경우
             if file_type == "security":
                 self.security_file_label.setText(file_path)
                 try:
@@ -199,6 +204,7 @@ class OvertimeAnalyzer(QMainWindow):
             if self.security_df is not None and self.overtime_df is not None:
                 self.analyze_button.setEnabled(True)
 
+    # 경비 및 초과 근무 데이터를 분석하여 의심스러운 기록 탐지 (메인 메서드)
     def analyze_data(self):
         if self.security_df is None or self.overtime_df is None:
             QMessageBox.warning(self, "경고", "두 파일이 모두 로드되어야 합니다.")
@@ -206,15 +212,21 @@ class OvertimeAnalyzer(QMainWindow):
 
         try:
             # 경비 기록 파일 분석
+            print("[DEBUG] 경비 기록 파일 처리 시작...")
             security_df_processed = self.process_security_log(self.security_df)
+            print("[DEBUG] 경비 기록 파일 처리 완료")
 
             # 초과근무 기록 파일 분석
+            print("[DEBUG] 초과근무 기록 파일 처리 시작...")
             overtime_df_processed = self.process_overtime_log(self.overtime_df)
+            print("[DEBUG] 초과근무 기록 파일 처리 완료")
 
             # 두 데이터 비교 분석
+            print("[DEBUG] 데이터 비교 분석 시작...")
             suspicious_records = self.compare_security_and_overtime(
                 security_df_processed, overtime_df_processed
             )
+            print("[DEBUG] 데이터 비교 분석 완료")
 
             # 결과 테이블에 표시
             self.display_results(suspicious_records)
@@ -238,6 +250,7 @@ class OvertimeAnalyzer(QMainWindow):
 
             print(traceback.format_exc())  # 상세 오류 정보 출력
 
+    # 경비 로그를 처리하여 날짜별 경비 상태 (설정/해제) 분석
     def process_security_log(self, df):
         """경비 기록을 처리하여 각 날짜별 경비 상태를 분석합니다."""
         try:
@@ -363,25 +376,89 @@ class OvertimeAnalyzer(QMainWindow):
             # 컨텍스트를 바탕으로 출입 기록을 경비해제 또는 경비시작으로 재분류
             business_days = filtered_df_slim["업무일"].unique()
 
+            # 경비 데이터가 불명확한 업무일 기록
+            unclear_security_days = []
+
             for business_day in business_days:
                 day_records = filtered_df_slim[filtered_df_slim["업무일"] == business_day]
                 unclear_records = day_records[day_records["기록유형"] == "출입(불명확)"]
 
+                # 업무일 내 기록 시간순 정렬
+                day_records_sorted = day_records.sort_values(
+                    by=[col_mapping["발생일자"], col_mapping["발생시각"]]
+                )
+
+                # 경비 해제/시작 기록 확인
+                has_release = any(
+                    record["기록유형"] == "경비해제" for _, record in day_records_sorted.iterrows()
+                )
+                has_start = any(
+                    record["기록유형"] == "경비시작" for _, record in day_records_sorted.iterrows()
+                )
+
                 if len(unclear_records) > 0:
-                    # 업무일 내 첫 기록과 마지막 기록이 불명확한 경우 처리
-                    day_records_sorted = day_records.sort_values(
-                        by=[col_mapping["발생일자"], col_mapping["발생시각"]]
-                    )
+                    # 새로운 요구사항에 맞게 처리:
+                    # 1. 첫 기록이 '출입(불명확)'이면 '경비해제'로 간주
+                    # 2. 그 외 모든 '출입(불명확)' 기록은 무시
 
                     # 첫 기록이 '출입(불명확)'이면 '경비해제'로 간주
                     if day_records_sorted.iloc[0]["기록유형"] == "출입(불명확)":
                         first_record_index = day_records_sorted.index[0]
                         filtered_df_slim.loc[first_record_index, "기록유형"] = "경비해제"
+                        print(
+                            f"[경비판단] {business_day} - 첫 기록이 '출입'이므로 '경비해제'로 판단"
+                        )
 
-                    # 마지막 기록이 '출입(불명확)'이면 '경비시작'으로 간주
-                    if day_records_sorted.iloc[-1]["기록유형"] == "출입(불명확)":
-                        last_record_index = day_records_sorted.index[-1]
-                        filtered_df_slim.loc[last_record_index, "기록유형"] = "경비시작"
+                    # 첫 번째가 아닌 모든 '출입(불명확)' 기록은 무시 (기타로 변경)
+                    for i, record in enumerate(day_records_sorted.iterrows()):
+                        if i == 0:  # 첫 번째 기록은 건너뛰기 (이미 처리됨)
+                            continue
+
+                        idx, row = record
+                        # 첫 번째가 아닌 모든 불명확 출입 기록은 '기타'로 처리 (무시)
+                        if row["기록유형"] == "출입(불명확)":
+                            filtered_df_slim.loc[idx, "기록유형"] = "기타"
+                            print(
+                                f"[출입무시] {business_day} - 첫 번째가 아닌 출입기록은 무시함 (시간: {row['시간_시']:02d}:{row['시간_분']:02d})"
+                            )
+
+                    # '출입(불명확)' 기록은 첫번째를 제외한 모든 기록이 '기타'로 처리되므로 검사 불필요
+
+                    # 마지막 기록이 확실한 경비시작이 아니면 확인 필요
+                    # (단, '기타'로 처리된 출입 기록은 무시)
+                    if (
+                        day_records_sorted.iloc[-1]["기록유형"] != "경비시작"
+                        and day_records_sorted.iloc[-1]["기록유형"] != "기타"
+                    ):
+                        last_record = day_records_sorted.iloc[-1]
+                        last_record_time = (
+                            f"{last_record['시간_시']:02d}:{last_record['시간_분']:02d}"
+                        )
+                        unclear_security_days.append(
+                            {
+                                "업무일": business_day,
+                                "마지막기록시간": last_record_time,
+                                "기록유형": last_record["기록유형"],
+                                "문제": "마지막 기록이 '경비시작'이 아님",
+                            }
+                        )
+                        print(
+                            f"[의심데이터] {business_day} - 마지막 기록이 '경비시작'이 아닙니다 (유형: {last_record['기록유형']}, 시간: {last_record_time})"
+                        )
+
+                # 명확한 경비 기록이 아예 없는 경우도 의심 데이터로 분류
+                if not has_release and not has_start and len(day_records) > 0:
+                    unclear_security_days.append(
+                        {
+                            "업무일": business_day,
+                            "기록수": len(day_records),
+                            "문제": "명확한 경비해제/시작 기록 없음",
+                        }
+                    )
+                    print(f"[의심데이터] {business_day} - 명확한 경비 기록 없음 (사용자 확인 필요)")
+
+            # 의심 기록 저장
+            self.unclear_security_days = unclear_security_days
 
             # 각 업무일별 경비 상태 시간 분석
             security_status_by_day = {}
@@ -428,44 +505,6 @@ class OvertimeAnalyzer(QMainWindow):
             print(f"경비 기록 처리 중 오류: {str(e)}")
             print(traceback.format_exc())
             raise
-
-    def is_korean_holiday(self, date):
-        """한국 공휴일 여부를 판단합니다."""
-        # 매년 1월 1일(신정)
-        if date.month == 1 and date.day == 1:
-            return True
-
-        # 매년 3월 1일(삼일절)
-        if date.month == 3 and date.day == 1:
-            return True
-
-        # 매년 5월 5일(어린이날)
-        if date.month == 5 and date.day == 5:
-            return True
-
-        # 매년 6월 6일(현충일)
-        if date.month == 6 and date.day == 6:
-            return True
-
-        # 매년 8월 15일(광복절)
-        if date.month == 8 and date.day == 15:
-            return True
-
-        # 매년 10월 3일(개천절)
-        if date.month == 10 and date.day == 3:
-            return True
-
-        # 매년 10월 9일(한글날)
-        if date.month == 10 and date.day == 9:
-            return True
-
-        # 매년 12월 25일(크리스마스)
-        if date.month == 12 and date.day == 25:
-            return True
-
-        # 설날, 추석 등 음력 공휴일은 매년 날짜가 달라지므로 단순화를 위해 생략
-
-        return False
 
     def process_overtime_log(self, df):
         """초과근무 기록을 처리합니다."""
@@ -612,19 +651,35 @@ class OvertimeAnalyzer(QMainWindow):
                     # 날짜 처리
                     work_date = row["날짜_datetime"].date()
 
+                    # 출/퇴근 시간 누락 여부 플래그
+                    has_missing_time = False
+                    missing_time_fields = []
+
                     # 출근시간 처리 (HH:mm 고정 형식)
+                    if pd.isna(row[col_mapping["시작시간"]]):
+                        has_missing_time = True
+                        missing_time_fields.append("출근시간")
+
                     start_time = parse_time(row[col_mapping["시작시간"]], regular_start)
 
                     if start_time is None:
-                        # 시작 시간이 없으면 정규 근무 시작 시간으로 설정
-                        start_time = regular_start
+                        # 시작 시간이 없거나 파싱 실패
+                        has_missing_time = True
+                        missing_time_fields.append("출근시간")
+                        start_time = regular_start  # 일단 기본값 설정 (나중에 의심 데이터로 표시)
 
                     # 퇴근시간 처리 (HH:mm 고정 형식)
+                    if pd.isna(row[col_mapping["종료시간"]]):
+                        has_missing_time = True
+                        missing_time_fields.append("퇴근시간")
+
                     end_time = parse_time(row[col_mapping["종료시간"]], regular_end)
 
                     if end_time is None:
-                        # 종료 시간이 없으면 정규 근무 종료 시간으로 설정
-                        end_time = regular_end
+                        # 종료 시간이 없거나 파싱 실패
+                        has_missing_time = True
+                        missing_time_fields.append("퇴근시간")
+                        end_time = regular_end  # 일단 기본값 설정 (나중에 의심 데이터로 표시)
 
                     # 업무일 결정 (새벽 4시 기준)
                     business_date = work_date
@@ -791,9 +846,93 @@ class OvertimeAnalyzer(QMainWindow):
                             )
 
                 except Exception as e:
-                    print(f"초과근무 기록 처리 중 오류 (무시됨): {str(e)}")
-                    # 개별 레코드 처리 오류는 무시하고 계속 진행
+                    print(f"초과근무 기록 처리 중 오류: {str(e)}")
+                    error_desc = str(e)
+                    # 오류 발생 데이터 저장
+                    error_record = {
+                        "업무일": (
+                            business_date
+                            if "business_date" in locals()
+                            else work_date if "work_date" in locals() else "알 수 없음"
+                        ),
+                        "직원명": (
+                            employee_name
+                            if "employee_name" in locals()
+                            else row.get(col_mapping["이름"], "알 수 없음")
+                        ),
+                        "오류내용": error_desc,
+                        "원본데이터": {
+                            k: str(v)
+                            for k, v in row.items()
+                            if k
+                            in [
+                                col_mapping["날짜"],
+                                col_mapping["시작시간"],
+                                col_mapping["종료시간"],
+                                col_mapping["이름"],
+                                "부서명",
+                                "근무내용",
+                            ]
+                        },
+                    }
+
+                    # 오류 데이터 목록에 추가
+                    if not hasattr(self, "error_records"):
+                        self.error_records = []
+                    self.error_records.append(error_record)
                     continue
+
+            # 누락된 시간 정보가 있는 데이터 검사 및 의심 데이터로 추가
+            missing_time_records = []
+            for record in filtered_df.iterrows():
+                row = record[1]
+                if pd.isna(row[col_mapping["시작시간"]]) or pd.isna(row[col_mapping["종료시간"]]):
+                    work_date = (
+                        row["날짜_datetime"].date() if pd.notna(row["날짜_datetime"]) else None
+                    )
+                    employee_name = (
+                        str(row[col_mapping["이름"]])
+                        if pd.notna(row[col_mapping["이름"]])
+                        else "Unknown"
+                    )
+                    department = (
+                        str(row["부서명"]) if "부서명" in row and pd.notna(row["부서명"]) else ""
+                    )
+
+                    missing_fields = []
+                    if pd.isna(row[col_mapping["시작시간"]]):
+                        missing_fields.append("출근시간")
+                    if pd.isna(row[col_mapping["종료시간"]]):
+                        missing_fields.append("퇴근시간")
+
+                    missing_time_records.append(
+                        {
+                            "업무일": work_date,
+                            "직원명": employee_name,
+                            "부서명": department,
+                            "누락필드": ", ".join(missing_fields),
+                            "원본데이터": {
+                                k: str(v)
+                                for k, v in row.items()
+                                if k
+                                in [
+                                    col_mapping["날짜"],
+                                    col_mapping["시작시간"],
+                                    col_mapping["종료시간"],
+                                    col_mapping["이름"],
+                                    "부서명",
+                                    "근무내용",
+                                ]
+                            },
+                        }
+                    )
+
+            # 시간 누락 기록 저장
+            self.missing_time_records = missing_time_records
+            if missing_time_records:
+                print(
+                    f"[주의] {len(missing_time_records)}개의 출/퇴근 시간 누락 기록이 발견되었습니다."
+                )
 
             return overtime_records
 
@@ -820,7 +959,54 @@ class OvertimeAnalyzer(QMainWindow):
             security_status = security_status_by_day.get(business_date, [])
 
             if not security_status:
-                # 해당 업무일의 경비 기록이 없으면 다음으로 넘어감
+                # 해당 업무일의 경비 기록이 없는 경우 의심 데이터로 저장
+                if not hasattr(self, "no_security_records"):
+                    self.no_security_records = []
+
+                self.no_security_records.append(
+                    {
+                        "업무일": business_date,
+                        "직원명": employee_name,
+                        "초과근무시간": f"{overtime_start.strftime('%H:%M')}-{overtime_end.strftime('%H:%M')}",
+                        "문제": "경비 기록 없음",
+                    }
+                )
+                print(
+                    f"[의심데이터] {business_date} - {employee_name} - 경비 기록 없음 (사용자 확인 필요)"
+                )
+                # 경비 기록이 없어도 의심 데이터로 추가
+                suspicious_reason = "해당 업무일에 경비 기록 없음"
+
+                # 초과근무 기록에서 추가 정보 수집
+                work_content = ""
+                department = ""
+                is_holiday = False
+
+                for ovt_record in overtime_records:
+                    if (
+                        ovt_record["직원명"] == employee_name
+                        and ovt_record["업무일"] == business_date
+                    ):
+                        if "부서명" in ovt_record and ovt_record["부서명"]:
+                            department = ovt_record["부서명"]
+                        if "근무내용" in ovt_record and ovt_record["근무내용"]:
+                            work_content = ovt_record["근무내용"]
+                        if "휴일여부" in ovt_record:
+                            is_holiday = ovt_record["휴일여부"]
+                        break
+
+                suspicious_records.append(
+                    {
+                        "날짜": business_date,
+                        "직원명": employee_name,
+                        "부서명": department,
+                        "초과근무시간": f"{overtime_start.strftime('%H:%M')}-{overtime_end.strftime('%H:%M')}",
+                        "경비상태": "기록 없음",
+                        "의심사유": suspicious_reason,
+                        "근무내용": work_content,
+                        "휴일여부": "휴일" if is_holiday else "평일",
+                    }
+                )
                 continue
 
             # 초과근무 시간과 경비 상태 비교
@@ -858,57 +1044,81 @@ class OvertimeAnalyzer(QMainWindow):
             # 의심 시간 구간 계산
             suspicious_intervals = []
 
-            # CASE 1: 경비 설정(시작) 후 초과근무가 계속된 경우 감지
-            for i, change in enumerate(security_changes):
-                if change["상태"] == "시작":  # 경비 설정(시작)
-                    security_set_time = change["시간"]
-                    # 이 시각 이후의 초과근무는 의심스러움
-                    if security_set_time < overtime_end_dt:
-                        suspicious_start = max(security_set_time, overtime_start_dt)
-                        suspicious_end = overtime_end_dt
-                        suspicious_intervals.append((suspicious_start, suspicious_end))
+            # 초과근무 시간과 경비 상태를 구간별로 비교하여 의심 시간대 계산
+            # 경비 상태의 시간대별 구간 생성 (경비시작-경비해제 구간)
+            security_periods = []
+
+            # 경비 변화 상태에 따른 시간대 구간 생성
+            if len(security_changes) > 0:
+                # 먼저 첫 상태가 "해제"인 경우, 자정부터 첫 해제까지는 경비 활성화 상태로 간주
+                if security_changes[0]["상태"] == "해제":
+                    midnight = datetime.combine(overtime["날짜"], time(0, 0))
+                    security_periods.append(
+                        {
+                            "시작": midnight,
+                            "종료": security_changes[0]["시간"],
+                            "상태": "시작",  # 경비 활성화 상태
+                        }
+                    )
+
+                # 이후의 상태 변화를 추적하며 구간 생성
+                for i in range(len(security_changes)):
+                    current = security_changes[i]
+
+                    # 마지막 항목이거나 다음 항목의 상태가 현재와 다른 경우
+                    if i == len(security_changes) - 1:
+                        # 마지막 상태가 "시작"인 경우, 해당 시작부터 자정까지 경비 활성화 상태로 간주
+                        if current["상태"] == "시작":
+                            next_day = datetime.combine(
+                                overtime["날짜"] + timedelta(days=1), time(0, 0)
+                            )
+                            security_periods.append(
+                                {"시작": current["시간"], "종료": next_day, "상태": "시작"}
+                            )
+                    else:
+                        next_change = security_changes[i + 1]
+                        # 현재 상태부터 다음 상태 변경 전까지의 구간 생성
+                        security_periods.append(
+                            {
+                                "시작": current["시간"],
+                                "종료": next_change["시간"],
+                                "상태": current["상태"],
+                            }
+                        )
+
+            # 경비기록이 하나도 없는 경우 (상태 변화가 없는 경우)
+            if len(security_periods) == 0:
+                # 기본적으로 보수적인 접근: 경비 활성화 상태로 간주
+                today_start = datetime.combine(overtime["날짜"], time(0, 0))
+                tomorrow_start = datetime.combine(overtime["날짜"] + timedelta(days=1), time(0, 0))
+                security_periods.append(
+                    {
+                        "시작": today_start,
+                        "종료": tomorrow_start,
+                        "상태": "시작",  # 경비 활성화 상태
+                    }
+                )
+
+            # 초과근무 시간과 경비 활성화 시간대를 비교하여 의심 구간 계산
+            suspicious_intervals = []
+
+            # 각 경비 활성화 구간과 초과근무 시간 비교
+            for period in security_periods:
+                # 경비 활성화 상태인 경우만 검사
+                if period["상태"] == "시작":
+                    # 초과근무 시간이 경비 활성화 구간과 겹치는지 확인
+                    if max(period["시작"], overtime_start_dt) < min(
+                        period["종료"], overtime_end_dt
+                    ):
+                        # 겹치는 구간 계산
+                        overlap_start = max(period["시작"], overtime_start_dt)
+                        overlap_end = min(period["종료"], overtime_end_dt)
+                        suspicious_intervals.append((overlap_start, overlap_end))
+
                         # 디버그 출력
                         print(
-                            f"[의심기록] {business_date} - {employee_name} - 경비설정({security_set_time.strftime('%H:%M:%S')}) 이후 초과근무({suspicious_start.strftime('%H:%M:%S')}-{suspicious_end.strftime('%H:%M:%S')})"
+                            f"[의심기록] {business_date} - {employee_name} - 경비활성화({period['시작'].strftime('%H:%M:%S')}-{period['종료'].strftime('%H:%M:%S')}) 중 초과근무 발생({overlap_start.strftime('%H:%M:%S')}-{overlap_end.strftime('%H:%M:%S')})"
                         )
-                        # 3월 27일 예시 케이스 특별 처리 (21:16 경비 설정, 23:00 초과근무)
-                        if (
-                            business_date.strftime("%Y-%m-%d") == "2025-03-27"
-                            and security_set_time.hour == 21
-                        ):
-                            print(
-                                f"[주의] 3월 27일 사례 감지: 경비 설정 {security_set_time.strftime('%H:%M:%S')}에 이루어졌으나 {suspicious_end.strftime('%H:%M')}까지 초과근무 기록 존재"
-                            )
-
-            # CASE 2: 초과근무 시간이 경비 해제 없이 진행된 경우
-            # 초과근무 시작 시간 이전의 마지막 경비 상태 확인
-            current_status = "시작"  # 기본값은 경비 활성화 상태(보수적 접근)
-
-            for change in security_changes:
-                if change["시간"] < overtime_start_dt:
-                    current_status = change["상태"]
-                else:
-                    break
-
-            # 경비 활성화 상태로 초과근무가 시작된 경우
-            if current_status == "시작":
-                # 경비가 활성화된 동안의 초과근무 시간 계산
-                suspicious_start = overtime_start_dt
-                suspicious_end = None
-
-                # 초과근무 중 경비 상태가 변경되는지 확인
-                for change in security_changes:
-                    if overtime_start_dt <= change["시간"] <= overtime_end_dt:
-                        if change["상태"] == "해제":
-                            # 경비가 해제되면 중첩 시간 종료
-                            suspicious_end = change["시간"]
-                            break
-
-                # 경비 해제가 없으면 초과근무 종료까지 의심 구간
-                if suspicious_end is None:
-                    suspicious_end = overtime_end_dt
-
-                suspicious_intervals.append((suspicious_start, suspicious_end))
 
             # 모든 의심 구간에 대해 총 중첩 시간 계산
             total_suspicious_hours = 0
@@ -917,14 +1127,14 @@ class OvertimeAnalyzer(QMainWindow):
             for start_time, end_time in suspicious_intervals:
                 if start_time < end_time:  # 유효한 구간만 처리
                     duration_hours = (end_time - start_time).seconds / 3600
-                    if duration_hours >= 0.25:  # 15분(0.25시간) 이상 중첩만 고려
+                    if duration_hours > 0:  # 1분이라도 중첩되면 의심 구간으로 간주
                         total_suspicious_hours += duration_hours
                         start_str = start_time.strftime("%H:%M")
                         end_str = end_time.strftime("%H:%M")
                         suspicious_periods.append(f"{start_str}-{end_str}")
 
             # 의심 시간이 있으면 기록
-            if total_suspicious_hours >= 0.25:  # 총 15분 이상 의심 시간
+            if total_suspicious_hours > 0:  # 1분이라도 의심 시간이 있으면 기록
                 period_str = ", ".join(suspicious_periods)
                 suspicious_reason = f"경비 작동 중 총 {total_suspicious_hours:.1f}시간 초과근무 기록 존재 ({period_str})"
 
@@ -1030,7 +1240,7 @@ class OvertimeAnalyzer(QMainWindow):
             # 날짜
             date_item = QTableWidgetItem(
                 record["날짜"].strftime("%Y-%m-%d")
-                if isinstance(record["날짜"], datetime.date)
+                if hasattr(record["날짜"], "strftime")
                 else str(record["날짜"])
             )
             self.table.setItem(i, 0, date_item)
@@ -1064,8 +1274,9 @@ class OvertimeAnalyzer(QMainWindow):
             self.table.setItem(i, 7, holiday_item)
 
     def export_results(self):
+        # 의심 기록이 없는 경우 처리
         if not self.suspicious_records:
-            QMessageBox.information(self, "내보내기", "내보낼 결과가 없습니다.")
+            QMessageBox.information(self, "내보내기", "내보낼 의심 기록이 없습니다.")
             return
 
         options = QFileDialog.Options()
@@ -1073,47 +1284,47 @@ class OvertimeAnalyzer(QMainWindow):
             self, "결과 저장", "", "Excel Files (*.xlsx)", options=options
         )
 
-        if file_path:
-            try:
-                # 결과를 데이터프레임으로 변환
-                data = []
-                for row in range(self.table.rowCount()):
-                    date = self.table.item(row, 0).text()
-                    employee = self.table.item(row, 1).text()
-                    department = self.table.item(row, 2).text() if self.table.item(row, 2) else ""
-                    overtime = self.table.item(row, 3).text()
-                    security = self.table.item(row, 4).text()
-                    reason = self.table.item(row, 5).text()
-                    work_content = self.table.item(row, 6).text() if self.table.item(row, 6) else ""
+        if not file_path:
+            return
 
-                    holiday_status = (
-                        self.table.item(row, 7).text() if self.table.item(row, 7) else "평일"
-                    )
+        try:
+            # 의심 기록만 내보내기
+            self.export_suspicious_records(file_path)
+            QMessageBox.information(self, "완료", f"결과가 성공적으로 저장되었습니다:\n{file_path}")
 
-                    data.append(
-                        {
-                            "날짜": date,
-                            "직원명": employee,
-                            "부서명": department,
-                            "초과근무 시간": overtime,
-                            "경비상태": security,
-                            "의심 사유": reason,
-                            "근무내용": work_content,
-                            "휴일여부": holiday_status,
-                        }
-                    )
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"결과 내보내기 중 오류가 발생했습니다: {str(e)}")
 
-                results_df = pd.DataFrame(data)
-                results_df.to_excel(file_path, index=False)
+    def export_suspicious_records(self, file_path):
+        """의심 기록만 엑셀로 내보냅니다."""
+        # 결과를 데이터프레임으로 변환
+        data = []
+        for row in range(self.table.rowCount()):
+            date = self.table.item(row, 0).text()
+            employee = self.table.item(row, 1).text()
+            department = self.table.item(row, 2).text() if self.table.item(row, 2) else ""
+            overtime = self.table.item(row, 3).text()
+            security = self.table.item(row, 4).text()
+            reason = self.table.item(row, 5).text()
+            work_content = self.table.item(row, 6).text() if self.table.item(row, 6) else ""
+            holiday_status = self.table.item(row, 7).text() if self.table.item(row, 7) else "평일"
 
-                QMessageBox.information(
-                    self, "완료", f"결과가 성공적으로 저장되었습니다:\n{file_path}"
-                )
+            data.append(
+                {
+                    "날짜": date,
+                    "직원명": employee,
+                    "부서명": department,
+                    "초과근무 시간": overtime,
+                    "경비상태": security,
+                    "의심 사유": reason,
+                    "근무내용": work_content,
+                    "휴일여부": holiday_status,
+                }
+            )
 
-            except Exception as e:
-                QMessageBox.critical(
-                    self, "오류", f"결과 내보내기 중 오류가 발생했습니다: {str(e)}"
-                )
+        # 엑셀로 저장
+        df = pd.DataFrame(data)
+        df.to_excel(file_path, index=False)
 
 
 if __name__ == "__main__":
