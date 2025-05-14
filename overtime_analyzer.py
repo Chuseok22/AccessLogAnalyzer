@@ -397,76 +397,39 @@ class OvertimeAnalyzer(QMainWindow):
                 )
 
                 if len(unclear_records) > 0:
-                    # 기록들의 상태 패턴을 확인
-                    prev_status = None
+                    # 새로운 요구사항에 맞게 처리:
+                    # 1. 첫 기록이 '출입(불명확)'이면 '경비해제'로 간주
+                    # 2. 그 외 모든 '출입(불명확)' 기록은 무시
 
                     # 첫 기록이 '출입(불명확)'이면 '경비해제'로 간주
                     if day_records_sorted.iloc[0]["기록유형"] == "출입(불명확)":
                         first_record_index = day_records_sorted.index[0]
                         filtered_df_slim.loc[first_record_index, "기록유형"] = "경비해제"
-                        prev_status = "경비해제"
                         print(
                             f"[경비판단] {business_day} - 첫 기록이 '출입'이므로 '경비해제'로 판단"
                         )
 
-                    # 각 불명확 기록을 앞뒤 컨텍스트에 따라 재분류
+                    # 첫 번째가 아닌 모든 '출입(불명확)' 기록은 무시 (기타로 변경)
                     for i, record in enumerate(day_records_sorted.iterrows()):
-                        idx, row = record
-
-                        # 첫 번째 기록은 이미 처리했으므로 건너뛰기
-                        if i == 0:
-                            if row["기록유형"] == "경비해제":
-                                prev_status = "경비해제"
-                            elif row["기록유형"] == "경비시작":
-                                prev_status = "경비시작"
+                        if i == 0:  # 첫 번째 기록은 건너뛰기 (이미 처리됨)
                             continue
 
-                        # 현재 기록이 불명확인 경우
+                        idx, row = record
+                        # 첫 번째가 아닌 모든 불명확 출입 기록은 '기타'로 처리 (무시)
                         if row["기록유형"] == "출입(불명확)":
-                            # 이전 상태에 따라 다르게 처리
-                            if prev_status == "경비해제":
-                                # 이전에 해제했으면, 이번에는 시작
-                                filtered_df_slim.loc[idx, "기록유형"] = "경비시작"
-                                prev_status = "경비시작"
-                                print(
-                                    f"[경비판단] {business_day} - 출입기록을 '경비시작'으로 판단 (시간: {row['시간_시']:02d}:{row['시간_분']:02d})"
-                                )
-                            elif prev_status == "경비시작" or prev_status is None:
-                                # 이전에 시작했거나 상태가 없으면, 이번에는 해제
-                                filtered_df_slim.loc[idx, "기록유형"] = "경비해제"
-                                prev_status = "경비해제"
-                                print(
-                                    f"[경비판단] {business_day} - 출입기록을 '경비해제'로 판단 (시간: {row['시간_시']:02d}:{row['시간_분']:02d})"
-                                )
-                        else:
-                            # 현재 기록이 명확한 경우 상태 업데이트
-                            prev_status = (
-                                "경비해제" if row["기록유형"] == "경비해제" else "경비시작"
+                            filtered_df_slim.loc[idx, "기록유형"] = "기타"
+                            print(
+                                f"[출입무시] {business_day} - 첫 번째가 아닌 출입기록은 무시함 (시간: {row['시간_시']:02d}:{row['시간_분']:02d})"
                             )
 
-                    # 모든 '출입(불명확)' 기록이 처리된 후, 마지막 불명확 기록 검사
-                    last_unclear = day_records_sorted[
-                        day_records_sorted["기록유형"] == "출입(불명확)"
-                    ]
-                    if not last_unclear.empty:
-                        last_record = last_unclear.iloc[-1]
-                        last_record_time = (
-                            f"{last_record['시간_시']:02d}:{last_record['시간_분']:02d}"
-                        )
-                        unclear_security_days.append(
-                            {
-                                "업무일": business_day,
-                                "마지막기록시간": last_record_time,
-                                "기록유형": "출입(불명확)",
-                                "문제": "처리 후에도 남아있는 출입(불명확) 기록이 있습니다",
-                            }
-                        )
-                        print(
-                            f"[의심데이터] {business_day} - 아직도 '출입(불명확)'으로 남아있는 기록이 있습니다 (시간: {last_record_time})"
-                        )
+                    # '출입(불명확)' 기록은 첫번째를 제외한 모든 기록이 '기타'로 처리되므로 검사 불필요
 
                     # 마지막 기록이 확실한 경비시작이 아니면 확인 필요
-                    if day_records_sorted.iloc[-1]["기록유형"] != "경비시작":
+                    # (단, '기타'로 처리된 출입 기록은 무시)
+                    if (
+                        day_records_sorted.iloc[-1]["기록유형"] != "경비시작"
+                        and day_records_sorted.iloc[-1]["기록유형"] != "기타"
+                    ):
                         last_record = day_records_sorted.iloc[-1]
                         last_record_time = (
                             f"{last_record['시간_시']:02d}:{last_record['시간_분']:02d}"
@@ -1406,6 +1369,9 @@ class OvertimeAnalyzer(QMainWindow):
         # 일자 요약 데이터 (하루의 총 경비 상태)
         security_summary = []
 
+        # 날짜별 경비 상태 시퀀스 데이터 (경비시작/해제 상세 기록)
+        security_sequences_by_day = {}
+
         # 날짜 간격 계산 (필터 기간 내 모든 날짜를 처리)
         delta = end_date - start_date
         all_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
@@ -1417,49 +1383,94 @@ class OvertimeAnalyzer(QMainWindow):
             # 모든 날짜에 대해 처리
             for business_day in all_dates:
                 status_list = security_status_by_day.get(business_day, [])
-
                 day_has_data = False  # 해당 날짜에 데이터 존재 여부
+                day_sequences = []  # 당일 경비 상태 시퀀스
 
                 # 해당 일자의 경비 상태가 있는 경우
                 if status_list:
-                    # 개별 상태 레코드 추가
-                    for status in status_list:
+                    # 개별 상태 레코드 추가 및 시퀀스 구성
+                    status_list_sorted = sorted(status_list, key=lambda x: x["시간"])
+
+                    for status in status_list_sorted:
+                        time_str = (
+                            status["시간"].split(" ")[1]
+                            if " " in status["시간"]
+                            else status["시간"]
+                        )
+                        status_type = "경비해제" if status["상태"] == "해제" else "경비시작"
+
                         security_data.append(
                             {
                                 "날짜": business_day,
-                                "시간": (
-                                    status["시간"].split(" ")[1]
-                                    if " " in status["시간"]
-                                    else status["시간"]
-                                ),
-                                "경비상태": "경비해제" if status["상태"] == "해제" else "경비시작",
+                                "시간": time_str,
+                                "경비상태": status_type,
                             }
                         )
+
+                        # 시퀀스 데이터에 추가
+                        day_sequences.append({"시간": time_str, "상태": status_type})
+
                         day_has_data = True
 
                     # 하루 요약 데이터에 추가
-                    first_record = next((r for r in status_list if r["상태"] == "해제"), None)
-                    last_record = next(
-                        (r for r in reversed(status_list) if r["상태"] == "시작"), None
+                    first_release = next(
+                        (r for r in status_list_sorted if r["상태"] == "해제"), None
+                    )
+                    last_start = next(
+                        (r for r in reversed(status_list_sorted) if r["상태"] == "시작"), None
+                    )
+
+                    # 모든 경비해제와 경비시작 시간 수집
+                    all_releases = [r for r in status_list_sorted if r["상태"] == "해제"]
+                    all_starts = [r for r in status_list_sorted if r["상태"] == "시작"]
+
+                    # 경비해제 시간 목록 (콤마로 구분)
+                    release_times = (
+                        ", ".join(
+                            [
+                                r["시간"].split(" ")[1] if " " in r["시간"] else r["시간"]
+                                for r in all_releases
+                            ]
+                        )
+                        if all_releases
+                        else "-"
+                    )
+
+                    # 경비시작 시간 목록 (콤마로 구분)
+                    start_times = (
+                        ", ".join(
+                            [
+                                s["시간"].split(" ")[1] if " " in s["시간"] else s["시간"]
+                                for s in all_starts
+                            ]
+                        )
+                        if all_starts
+                        else "-"
                     )
 
                     security_summary.append(
                         {
                             "날짜": business_day,
-                            "경비해제시각": (
-                                first_record["시간"].split(" ")[1]
-                                if first_record and " " in first_record["시간"]
+                            "첫경비해제": (
+                                first_release["시간"].split(" ")[1]
+                                if first_release and " " in first_release["시간"]
                                 else "-"
                             ),
-                            "경비시작시각": (
-                                last_record["시간"].split(" ")[1]
-                                if last_record and " " in last_record["시간"]
+                            "마지막경비시작": (
+                                last_start["시간"].split(" ")[1]
+                                if last_start and " " in last_start["시간"]
                                 else "-"
                             ),
-                            "상태": "정상" if first_record and last_record else "비정상",
+                            "모든경비해제시각": release_times,
+                            "모든경비시작시각": start_times,
+                            "상태": "정상" if first_release and last_start else "비정상",
                             "기록수": len(status_list),
                         }
                     )
+
+                    # 시퀀스 데이터 저장
+                    if day_sequences:
+                        security_sequences_by_day[business_day] = day_sequences
 
                 # 해당 일자의 경비 상태가 없는 경우
                 if not day_has_data:
@@ -1470,11 +1481,21 @@ class OvertimeAnalyzer(QMainWindow):
                     security_summary.append(
                         {
                             "날짜": business_day,
-                            "경비해제시각": "-",
-                            "경비시작시각": "-",
+                            "첫경비해제": "-",
+                            "마지막경비시작": "-",
+                            "모든경비해제시각": "-",
+                            "모든경비시작시각": "-",
                             "상태": "기록 없음",
                             "기록수": 0,
                         }
+                    )
+
+            # 날짜별 경비 상태 시퀀스 데이터 준비
+            sequence_data = []
+            for day, sequences in security_sequences_by_day.items():
+                for idx, seq in enumerate(sequences):
+                    sequence_data.append(
+                        {"날짜": day, "순서": idx + 1, "시간": seq["시간"], "경비상태": seq["상태"]}
                     )
 
         except Exception as e:
@@ -1483,10 +1504,15 @@ class OvertimeAnalyzer(QMainWindow):
 
             print(traceback.format_exc())
 
-        # 요약 데이터 시트 생성
+        # 요약 데이터 시트 생성 (첫 경비해제, 마지막 경비시작)
         if security_summary:
             summary_df = pd.DataFrame(security_summary)
             summary_df.to_excel(writer, sheet_name="경비상태요약", index=False)
+
+        # 경비 상태 시퀀스 시트 생성 (모든 경비해제/시작 기록을 순서대로)
+        if sequence_data:
+            sequence_df = pd.DataFrame(sequence_data)
+            sequence_df.to_excel(writer, sheet_name="경비상태시퀀스", index=False)
 
         # 상세 데이터 시트 생성
         if security_data:
@@ -1559,6 +1585,8 @@ class OvertimeAnalyzer(QMainWindow):
         # 5. 일자별 경비 상태 시트 (요약 및 상세)
         security_data = []
         security_summary = []
+        security_sequences_by_day = {}
+        sequence_data = []
 
         if hasattr(self, "process_security_log"):
             try:
@@ -1576,49 +1604,94 @@ class OvertimeAnalyzer(QMainWindow):
                 for business_day in all_dates:
                     status_list = security_status_by_day.get(business_day, [])
                     day_has_data = False  # 해당 날짜에 데이터 존재 여부
+                    day_sequences = []  # 당일 경비 상태 시퀀스
 
                     # 해당 일자의 경비 상태가 있는 경우
                     if status_list:
-                        # 개별 상태 레코드 추가
-                        for status in status_list:
+                        # 시간순으로 정렬 (중요!)
+                        status_list_sorted = sorted(status_list, key=lambda x: x["시간"])
+
+                        # 개별 상태 레코드 추가 및 시퀀스 구성
+                        for status in status_list_sorted:
+                            time_str = (
+                                status["시간"].split(" ")[1]
+                                if " " in status["시간"]
+                                else status["시간"]
+                            )
+                            status_type = "경비해제" if status["상태"] == "해제" else "경비시작"
+
                             security_data.append(
                                 {
                                     "날짜": business_day,
-                                    "시간": (
-                                        status["시간"].split(" ")[1]
-                                        if " " in status["시간"]
-                                        else status["시간"]
-                                    ),
-                                    "경비상태": (
-                                        "경비해제" if status["상태"] == "해제" else "경비시작"
-                                    ),
+                                    "시간": time_str,
+                                    "경비상태": status_type,
                                 }
                             )
+
+                            # 시퀀스 데이터에 추가
+                            day_sequences.append({"시간": time_str, "상태": status_type})
+
                             day_has_data = True
 
                         # 하루 요약 데이터에 추가
-                        first_record = next((r for r in status_list if r["상태"] == "해제"), None)
-                        last_record = next(
-                            (r for r in reversed(status_list) if r["상태"] == "시작"), None
+                        first_release = next(
+                            (r for r in status_list_sorted if r["상태"] == "해제"), None
+                        )
+                        last_start = next(
+                            (r for r in reversed(status_list_sorted) if r["상태"] == "시작"), None
+                        )
+
+                        # 모든 경비해제와 경비시작 시간 수집
+                        all_releases = [r for r in status_list_sorted if r["상태"] == "해제"]
+                        all_starts = [r for r in status_list_sorted if r["상태"] == "시작"]
+
+                        # 경비해제 시간 목록 (콤마로 구분)
+                        release_times = (
+                            ", ".join(
+                                [
+                                    r["시간"].split(" ")[1] if " " in r["시간"] else r["시간"]
+                                    for r in all_releases
+                                ]
+                            )
+                            if all_releases
+                            else "-"
+                        )
+
+                        # 경비시작 시간 목록 (콤마로 구분)
+                        start_times = (
+                            ", ".join(
+                                [
+                                    s["시간"].split(" ")[1] if " " in s["시간"] else s["시간"]
+                                    for s in all_starts
+                                ]
+                            )
+                            if all_starts
+                            else "-"
                         )
 
                         security_summary.append(
                             {
                                 "날짜": business_day,
-                                "경비해제시각": (
-                                    first_record["시간"].split(" ")[1]
-                                    if first_record and " " in first_record["시간"]
+                                "첫경비해제": (
+                                    first_release["시간"].split(" ")[1]
+                                    if first_release and " " in first_release["시간"]
                                     else "-"
                                 ),
-                                "경비시작시각": (
-                                    last_record["시간"].split(" ")[1]
-                                    if last_record and " " in last_record["시간"]
+                                "마지막경비시작": (
+                                    last_start["시간"].split(" ")[1]
+                                    if last_start and " " in last_start["시간"]
                                     else "-"
                                 ),
-                                "상태": "정상" if first_record and last_record else "비정상",
+                                "모든경비해제시각": release_times,
+                                "모든경비시작시각": start_times,
+                                "상태": "정상" if first_release and last_start else "비정상",
                                 "기록수": len(status_list),
                             }
                         )
+
+                        # 시퀀스 데이터 저장
+                        if day_sequences:
+                            security_sequences_by_day[business_day] = day_sequences
 
                     # 해당 일자의 경비 상태가 없는 경우
                     if not day_has_data:
@@ -1629,12 +1702,27 @@ class OvertimeAnalyzer(QMainWindow):
                         security_summary.append(
                             {
                                 "날짜": business_day,
-                                "경비해제시각": "-",
-                                "경비시작시각": "-",
+                                "첫경비해제": "-",
+                                "마지막경비시작": "-",
+                                "모든경비해제시각": "-",
+                                "모든경비시작시각": "-",
                                 "상태": "기록 없음",
                                 "기록수": 0,
                             }
                         )
+
+                # 날짜별 경비 상태 시퀀스 데이터 준비
+                for day, sequences in security_sequences_by_day.items():
+                    for idx, seq in enumerate(sequences):
+                        sequence_data.append(
+                            {
+                                "날짜": day,
+                                "순서": idx + 1,
+                                "시간": seq["시간"],
+                                "경비상태": seq["상태"],
+                            }
+                        )
+
             except Exception as e:
                 print(f"경비 상태 데이터 처리 오류: {str(e)}")
                 import traceback
@@ -1645,6 +1733,11 @@ class OvertimeAnalyzer(QMainWindow):
         if security_summary:
             summary_df = pd.DataFrame(security_summary)
             summary_df.to_excel(writer, sheet_name="경비상태요약", index=False)
+
+        # 경비 상태 시퀀스 시트 생성 (모든 경비해제/시작 기록을 순서대로)
+        if sequence_data:
+            sequence_df = pd.DataFrame(sequence_data)
+            sequence_df.to_excel(writer, sheet_name="경비상태시퀀스", index=False)
 
         # 상세 데이터 시트 생성
         if security_data:
