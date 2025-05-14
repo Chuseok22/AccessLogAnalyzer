@@ -1454,12 +1454,12 @@ class OvertimeAnalyzer(QMainWindow):
                             "첫경비해제": (
                                 first_release["시간"].split(" ")[1]
                                 if first_release and " " in first_release["시간"]
-                                else "-"
+                                else first_release["시간"] if first_release else "-"
                             ),
                             "마지막경비시작": (
                                 last_start["시간"].split(" ")[1]
                                 if last_start and " " in last_start["시간"]
-                                else "-"
+                                else last_start["시간"] if last_start else "-"
                             ),
                             "모든경비해제시각": release_times,
                             "모든경비시작시각": start_times,
@@ -1588,8 +1588,9 @@ class OvertimeAnalyzer(QMainWindow):
         security_sequences_by_day = {}
         sequence_data = []
 
-        if hasattr(self, "process_security_log"):
+        if hasattr(self, "process_security_log") and self.security_df is not None:
             try:
+                print(f"[DEBUG] export_all_data: 경비 상태 데이터 처리 시작")
                 # 필터 적용된 날짜 범위
                 start_date = self.start_date.date().toPyDate()
                 end_date = self.end_date.date().toPyDate()
@@ -1598,7 +1599,14 @@ class OvertimeAnalyzer(QMainWindow):
                 delta = end_date - start_date
                 all_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
 
+                print(f"[DEBUG] 처리할 날짜: {start_date} ~ {end_date}, 총 {len(all_dates)}일")
+
+                # 경비 상태 데이터 가져오기
+                print(f"[DEBUG] process_security_log 실행 중...")
                 security_status_by_day = self.process_security_log(self.security_df)
+                print(
+                    f"[DEBUG] process_security_log 완료, 결과: {len(security_status_by_day)} 일치의 데이터"
+                )
 
                 # 모든 날짜에 대해 처리
                 for business_day in all_dates:
@@ -1610,6 +1618,7 @@ class OvertimeAnalyzer(QMainWindow):
                     if status_list:
                         # 시간순으로 정렬 (중요!)
                         status_list_sorted = sorted(status_list, key=lambda x: x["시간"])
+                        print(f"[DEBUG] {business_day}일: 경비 상태 기록 {len(status_list)}개 발견")
 
                         # 개별 상태 레코드 추가 및 시퀀스 구성
                         for status in status_list_sorted:
@@ -1619,6 +1628,11 @@ class OvertimeAnalyzer(QMainWindow):
                                 else status["시간"]
                             )
                             status_type = "경비해제" if status["상태"] == "해제" else "경비시작"
+
+                            # 디버그 정보
+                            print(
+                                f"[DEBUG] 경비상태 기록: {business_day} {time_str} - {status_type}"
+                            )
 
                             security_data.append(
                                 {
@@ -1641,9 +1655,17 @@ class OvertimeAnalyzer(QMainWindow):
                             (r for r in reversed(status_list_sorted) if r["상태"] == "시작"), None
                         )
 
+                        print(
+                            f"[DEBUG] {business_day}일: 첫 경비해제={first_release is not None}, 마지막 경비시작={last_start is not None}"
+                        )
+
                         # 모든 경비해제와 경비시작 시간 수집
                         all_releases = [r for r in status_list_sorted if r["상태"] == "해제"]
                         all_starts = [r for r in status_list_sorted if r["상태"] == "시작"]
+
+                        print(
+                            f"[DEBUG] {business_day}일: 경비해제 {len(all_releases)}회, 경비시작 {len(all_starts)}회"
+                        )
 
                         # 경비해제 시간 목록 (콤마로 구분)
                         release_times = (
@@ -1675,12 +1697,12 @@ class OvertimeAnalyzer(QMainWindow):
                                 "첫경비해제": (
                                     first_release["시간"].split(" ")[1]
                                     if first_release and " " in first_release["시간"]
-                                    else "-"
+                                    else first_release["시간"] if first_release else "-"
                                 ),
                                 "마지막경비시작": (
                                     last_start["시간"].split(" ")[1]
                                     if last_start and " " in last_start["시간"]
-                                    else "-"
+                                    else last_start["시간"] if last_start else "-"
                                 ),
                                 "모든경비해제시각": release_times,
                                 "모든경비시작시각": start_times,
