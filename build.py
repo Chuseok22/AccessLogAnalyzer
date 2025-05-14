@@ -66,7 +66,7 @@ try:
     else:  # Linux
         exe_extension = ""
 
-    exe_file = os.path.join(dist_path, f"출입기록분석기{exe_extension}")
+    exe_file = os.path.join(dist_path, f"OvertimeAnalyzer{exe_extension}")
 
     if os.path.exists(exe_file):
         print(f"빌드 성공: {exe_file}")
