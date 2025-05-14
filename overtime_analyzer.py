@@ -1,6 +1,6 @@
 import sys
 import pandas as pd
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, date
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -212,15 +212,21 @@ class OvertimeAnalyzer(QMainWindow):
 
         try:
             # 경비 기록 파일 분석
+            print("[DEBUG] 경비 기록 파일 처리 시작...")
             security_df_processed = self.process_security_log(self.security_df)
+            print("[DEBUG] 경비 기록 파일 처리 완료")
 
             # 초과근무 기록 파일 분석
+            print("[DEBUG] 초과근무 기록 파일 처리 시작...")
             overtime_df_processed = self.process_overtime_log(self.overtime_df)
+            print("[DEBUG] 초과근무 기록 파일 처리 완료")
 
             # 두 데이터 비교 분석
+            print("[DEBUG] 데이터 비교 분석 시작...")
             suspicious_records = self.compare_security_and_overtime(
                 security_df_processed, overtime_df_processed
             )
+            print("[DEBUG] 데이터 비교 분석 완료")
 
             # 결과 테이블에 표시
             self.display_results(suspicious_records)
@@ -1179,7 +1185,7 @@ class OvertimeAnalyzer(QMainWindow):
             # 날짜
             date_item = QTableWidgetItem(
                 record["날짜"].strftime("%Y-%m-%d")
-                if isinstance(record["날짜"], datetime.date)
+                if hasattr(record["날짜"], "strftime")
                 else str(record["날짜"])
             )
             self.table.setItem(i, 0, date_item)
