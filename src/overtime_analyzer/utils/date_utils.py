@@ -69,7 +69,7 @@ def is_valid_time_format(time_str: str) -> bool:
             return False
         hour, minute = int(parts[0]), int(parts[1])
         return 0 <= hour < 24 and 0 <= minute < 60
-    except:
+    except ValueError:
         return False
 
 

@@ -125,7 +125,7 @@ class OvertimeLogProcessor:
                 renamed_columns[df.columns[i]] = f"컬럼{i}"
 
         # 데이터프레임 컬럼 이름 변경
-        df = df.rename(columns=renamed_columns)
+        df = df.rename(columns=renamed_columns, inplace=True)
 
         # 컬럼 이름 기반으로 매핑
         col_mapping = {
@@ -310,7 +310,21 @@ class OvertimeLogProcessor:
                 error_desc = str(e)
 
                 # 오류 발생 데이터 저장
-                self._add_error_record(row, col_mapping, error_desc)
+                # 유효한 값들은 try 블록 내에서 정의되었으므로
+                # 여기서는 현재 스코프에 있는 변수만 전달
+                try:
+                    # business_date와 employee_name이 이 스코프에 정의되어 있을 수 있음
+                    self._add_error_record(
+                        row,
+                        col_mapping,
+                        error_desc,
+                        business_date=locals().get("business_date"),
+                        work_date=locals().get("work_date"),
+                        employee_name=locals().get("employee_name"),
+                    )
+                except NameError:
+                    # 변수가 정의되지 않은 경우
+                    self._add_error_record(row, col_mapping, error_desc)
 
         return overtime_records
 
@@ -371,8 +385,8 @@ class OvertimeLogProcessor:
                 else:
                     # 숫자 형식인 경우 직접 변환
                     overtime_hours = float(row["초과근무시간"])
-            except:
-                print(f"초과근무시간 변환 실패: {row['초과근무시간']}")
+            except ValueError as parse_err:
+                print(f"초과근무시간 변환 실패: {row['초과근무시간']} ({parse_err})")
 
         return overtime_hours
 
@@ -508,7 +522,13 @@ class OvertimeLogProcessor:
                 )
 
     def _add_error_record(
-        self, row: pd.Series, col_mapping: Dict[str, str], error_desc: str
+        self,
+        row: pd.Series,
+        col_mapping: Dict[str, str],
+        error_desc: str,
+        business_date: Optional[date] = None,
+        work_date: Optional[date] = None,
+        employee_name: Optional[str] = None,
     ) -> None:
         """
         오류 기록을 추가합니다.
@@ -517,21 +537,12 @@ class OvertimeLogProcessor:
             row: 오류가 발생한 데이터 행
             col_mapping: 컬럼 매핑 정보
             error_desc: 오류 설명
+            business_date: 업무일 (기본값: None)
+            work_date: 실제 작업 날짜 (기본값: None)
+            employee_name: 직원 이름 (기본값: None)
         """
-        # 기본 변수 정의
-        business_date = None
-        work_date = None
-        employee_name = None
-
-        # 변수가 정의되어 있는지 확인하고 사용
-        if "business_date" in locals():
-            business_date = locals()["business_date"]
-        elif "work_date" in locals():
-            work_date = locals()["work_date"]
-
-        if "employee_name" in locals():
-            employee_name = locals()["employee_name"]
-        elif col_mapping["이름"] in row:
+        # 변수가 없는 경우 행에서 직원 이름 가져오기
+        if employee_name is None and col_mapping["이름"] in row:
             employee_name = row.get(col_mapping["이름"], "알 수 없음")
 
         # 오류 발생 데이터 저장

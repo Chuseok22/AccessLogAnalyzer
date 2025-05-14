@@ -14,6 +14,11 @@ except AttributeError:
 script_path = os.path.abspath(os.path.dirname(__file__))
 main_script = os.path.join(script_path, "run_analyzer.py")
 
+# 메인 스크립트 존재 확인
+if not os.path.exists(main_script):
+    print(f"메인 스크립트가 존재하지 않습니다: {main_script}")
+    sys.exit(1)
+
 # dist 폴더 확인 및 생성
 dist_path = os.path.join(script_path, "dist")
 if not os.path.exists(dist_path):
@@ -54,7 +59,11 @@ if not args.console:
 
 # PyInstaller 실행
 print(f"빌드 명령어: {' '.join(pyinstaller_args)}")
-PyInstaller.__main__.run(pyinstaller_args)
+try:
+    PyInstaller.__main__.run(pyinstaller_args)
+except Exception as e:
+    print(f"PyInstaller 실행 중 오류 발생: {str(e)}")
+    sys.exit(1)
 
 # 빌드된 파일 경로 확인
 try:
