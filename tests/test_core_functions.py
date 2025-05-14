@@ -48,10 +48,10 @@ class TestSecurityProcessor(unittest.TestCase):
             test_row, {"발생일자": "발생일자", "발생시각": "발생시각", "모드": "모드"}
         )
 
-        self.assertEqual(record.date, date(2023, 5, 1))
-        self.assertEqual(record.time, time(8, 30, 0))
+        self.assertEqual(record.record_date, date(2023, 5, 1))
+        self.assertEqual(record.record_time, time(8, 30, 0))
         self.assertEqual(record.mode, "경비해제")
-        self.assertEqual(record.record_type, "해제")
+        self.assertEqual(record.record_type, "경비해제")
 
     def test_determine_business_date(self):
         """업무일 계산 기능을 테스트합니다."""

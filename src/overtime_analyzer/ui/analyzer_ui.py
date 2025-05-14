@@ -305,9 +305,9 @@ class AnalyzerUI(QMainWindow):
 
             # 날짜
             date_item = QTableWidgetItem(
-                record.date.strftime("%Y-%m-%d")
-                if hasattr(record.date, "strftime")
-                else str(record.date)
+                record.record_date.strftime("%Y-%m-%d")
+                if hasattr(record.record_date, "strftime")
+                else str(record.record_date)
             )
             self.table.setItem(i, 0, date_item)
 

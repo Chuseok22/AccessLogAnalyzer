@@ -13,8 +13,8 @@ from typing import Dict, List, Optional, Any, Union
 class SecurityRecord:
     """경비 기록 데이터 클래스"""
 
-    date: date  # 발생일자
-    time: time  # 발생시각
+    record_date: date  # 발생일자
+    record_time: time  # 발생시각
     mode: str  # 모드 (출근/퇴근/해제/세팅 등)
     business_date: date  # 업무일자 (새벽 4시 기준)
     record_type: str  # 기록 유형 (경비해제/경비시작/출입(불명확)/기타)

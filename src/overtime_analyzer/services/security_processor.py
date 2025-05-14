@@ -9,15 +9,40 @@ import traceback
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, time, date, timedelta
 
-from ..models.data_models import SecurityStatusChange, SecurityPeriod
+from ..models.data_models import SecurityStatusChange, SecurityPeriod, SecurityRecord
 from ..utils.date_utils import calculate_business_date
 
 
-class SecurityLogProcessor:
+class SecurityProcessor:
     """경비 기록 처리 클래스"""
 
     def __init__(self):
         self.unclear_security_days = []  # 경비 기록이 불명확한 날짜 목록
+
+    def _parse_security_record(self, row: pd.Series, col_mapping: Dict[str, str]) -> SecurityRecord:
+        """
+        데이터프레임의 행을 SecurityRecord 객체로 변환합니다.
+
+        Args:
+            row: 변환할 데이터프레임 행
+            col_mapping: 컬럼 매핑 정보
+
+        Returns:
+            SecurityRecord: 경비 기록 객체
+        """
+        record_date = row[col_mapping["발생일자"]].date()
+        record_time = time(row["시간_시"], row["시간_분"])
+        mode = row[col_mapping["모드"]]
+        business_date = calculate_business_date(record_date, record_time)
+        record_type = self._determine_record_type(row, col_mapping)
+
+        return SecurityRecord(
+            record_date=record_date,
+            record_time=record_time,
+            mode=mode,
+            business_date=business_date,
+            record_type=record_type,
+        )
 
     def process_security_log(
         self, df: pd.DataFrame, start_date: str, end_date: str
@@ -179,6 +204,22 @@ class SecurityLogProcessor:
             df["시간_분"] = df[col_mapping["발생시각"]].dt.minute
 
         return df
+
+    def _determine_business_date(self, dt: datetime) -> date:
+        """
+        날짜와 시간 정보를 바탕으로 업무일을 결정합니다.
+        새벽 4시 이전은 전날의 업무일로 처리합니다.
+
+        Args:
+            dt: 날짜 및 시간 정보
+
+        Returns:
+            date: 업무일
+        """
+        business_date = dt.date()
+        if dt.hour < 4:  # 새벽 4시 이전은 전날 업무일로 처리
+            business_date = business_date - timedelta(days=1)
+        return business_date
 
     def _apply_date_filter(
         self, df: pd.DataFrame, col_mapping: Dict[str, str], start_date: str, end_date: str
