@@ -27,7 +27,7 @@ pip install -r requirements.txt
 
 # 실행 권한 부여
 echo "실행 파일 권한을 설정합니다..."
-chmod +x run_analyzer.py
+chmod +x overtime_analyzer.py
 chmod +x run.sh
 
 echo "설정이 완료되었습니다!"
@@ -35,7 +35,7 @@ echo "초과근무 분석 프로그램을 실행하시겠습니까?"
 read -p "실행하려면 Y, 나중에 실행하려면 N을 입력하세요 (Y/N): " run_choice
 
 if [[ "$run_choice" = "Y" || "$run_choice" = "y" ]]; then
-    python run_analyzer.py
+    python overtime_analyzer.py
 else
     echo ""
     echo "나중에 실행하려면 './run.sh' 실행"

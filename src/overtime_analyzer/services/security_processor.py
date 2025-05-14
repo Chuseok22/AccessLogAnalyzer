@@ -33,7 +33,9 @@ class SecurityProcessor:
         record_date = row[col_mapping["발생일자"]].date()
         record_time = time(row["시간_시"], row["시간_분"])
         mode = row[col_mapping["모드"]]
-        business_date = calculate_business_date(record_date, record_time)
+        business_date = calculate_business_date(
+            record_date, row["시간_시"]
+        )  # record_time 대신 시간 값만 전달
         record_type = self._determine_record_type(row, col_mapping)
 
         return SecurityRecord(
@@ -192,34 +194,19 @@ class SecurityProcessor:
         # 시각 열이 문자열이면 datetime.time으로 변환
         if not pd.api.types.is_datetime64_any_dtype(df[col_mapping["발생시각"]]):
             # 시각 데이터를 시간 및 분으로 분리하여 저장 (이후 분석용)
+            # format=None으로 설정하여 pandas의 유연한 파서 활용
             df["시각_임시"] = pd.to_datetime(
-                df[col_mapping["발생시각"]], errors="coerce", format="%H:%M:%S"
+                df[col_mapping["발생시각"]], errors="coerce", format=None
             )
-            df["시간_시"] = df["시각_임시"].dt.hour
-            df["시간_분"] = df["시각_임시"].dt.minute
+            df["시간_시"] = df["시각_임시"].dt.hour.fillna(0).astype(int)
+            df["시간_분"] = df["시각_임시"].dt.minute.fillna(0).astype(int)
             df = df.drop(columns=["시각_임시"])
         else:
             # 이미 datetime 형식인 경우 직접 시/분 추출
             df["시간_시"] = df[col_mapping["발생시각"]].dt.hour
             df["시간_분"] = df[col_mapping["발생시각"]].dt.minute
 
-        return df
-
-    def _determine_business_date(self, dt: datetime) -> date:
-        """
-        날짜와 시간 정보를 바탕으로 업무일을 결정합니다.
-        새벽 4시 이전은 전날의 업무일로 처리합니다.
-
-        Args:
-            dt: 날짜 및 시간 정보
-
-        Returns:
-            date: 업무일
-        """
-        business_date = dt.date()
-        if dt.hour < 4:  # 새벽 4시 이전은 전날 업무일로 처리
-            business_date = business_date - timedelta(days=1)
-        return business_date
+        return df  # _determine_business_date 메서드 제거 - calculate_business_date 함수로 대체
 
     def _apply_date_filter(
         self, df: pd.DataFrame, col_mapping: Dict[str, str], start_date: str, end_date: str

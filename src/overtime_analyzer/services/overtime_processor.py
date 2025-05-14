@@ -47,14 +47,14 @@ class OvertimeLogProcessor:
             # 필터링 적용
             filtered_df = self._apply_date_filter(df, col_mapping, start_date, end_date)
 
+            # 시간 누락 기록 확인 (유효성 검사 이전에 수행)
+            self._check_missing_time_records(filtered_df, col_mapping)
+
             # 각 행의 데이터 유효성 확인
             filtered_df = self._validate_data(filtered_df, col_mapping)
 
             # 초과근무 데이터 처리
             overtime_records = self._process_overtime_records(filtered_df, col_mapping)
-
-            # 시간 누락 기록 확인
-            self._check_missing_time_records(filtered_df, col_mapping)
 
             return overtime_records
 
@@ -125,7 +125,9 @@ class OvertimeLogProcessor:
                 renamed_columns[df.columns[i]] = f"컬럼{i}"
 
         # 데이터프레임 컬럼 이름 변경
-        df = df.rename(columns=renamed_columns, inplace=True)
+        df.rename(
+            columns=renamed_columns, inplace=True
+        )  # inplace=True 사용 시 반환값 할당하지 않음
 
         # 컬럼 이름 기반으로 매핑
         col_mapping = {

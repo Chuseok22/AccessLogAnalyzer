@@ -29,7 +29,7 @@ echo 초과근무 분석 프로그램을 실행하시겠습니까?
 set /p run_choice=실행하려면 Y, 나중에 실행하려면 N을 입력하세요 (Y/N): 
 
 if /i "%run_choice%"=="Y" (
-    python run_analyzer.py
+    python overtime_analyzer.py
 ) else (
     echo.
     echo 나중에 실행하려면 'run.bat' 파일 실행
