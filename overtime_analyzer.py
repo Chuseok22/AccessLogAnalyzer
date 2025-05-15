@@ -5,6 +5,7 @@
 """
 import os
 import sys
+import src.overtime_analyzer.main as main
 
 # 현재 스크립트의 절대 경로
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -13,7 +14,4 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 
-from src.overtime_analyzer.main import main
-
-if __name__ == "__main__":
-    main()
+main();
