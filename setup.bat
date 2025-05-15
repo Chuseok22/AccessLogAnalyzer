@@ -1,5 +1,5 @@
 @echo off
-echo 사무실 출입 및 초과근무 분석 도구 초기 설정을 시작합니다...
+echo 초과근무 분석 도구 초기 설정을 시작합니다...
 
 REM Python이 설치되어 있는지 확인
 where python >nul 2>nul
@@ -25,21 +25,17 @@ pip install -r requirements.txt
 REM 프로그램 실행
 echo.
 echo 설정이 완료되었습니다!
-echo 어떤 프로그램을 실행하시겠습니까?
-echo 1. 출입 기록 분석기
-echo 2. 초과근무 분석기
-echo 3. 나중에 실행
-set /p run_choice=선택 (1/2/3): 
+echo 프로그램을 지금 실행하시겠습니까?
+echo 1. 초과근무 분석기
+echo 2. 나중에 실행
+set /p run_choice=선택 (1/2): 
 
 if "%run_choice%"=="1" (
-    python access_log_analyzer.py
-) else if "%run_choice%"=="2" (
-    python overtime_analyzer.py
+    python app.py
 ) else (
     echo.
     echo 나중에 실행하려면:
-    echo - 출입 기록 분석: 'run.bat' 파일 실행
-    echo - 초과근무 분석: 'run_overtime.bat' 파일 실행
+    echo - 'run.bat' 파일 실행
 )
 
 pause

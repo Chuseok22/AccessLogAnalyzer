@@ -1,5 +1,6 @@
 import sys
 import pandas as pd
+import traceback
 from datetime import datetime, time, timedelta, date
 from PyQt5.QtWidgets import (
     QApplication,
