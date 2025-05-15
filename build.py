@@ -50,8 +50,18 @@ pyinstaller_args = [
     "--clean",
     "--distpath={}".format(dist_path),
     "--add-data={}".format(os.path.join(script_path, "requirements.txt") + os.path.pathsep + "."),
-    "--paths={}".format(script_path),  # 스크립트 경로 추가
-    "--paths={}".format(os.path.join(script_path, "src")),  # src 경로 추가
+    # 경로 추가
+    "--paths={}".format(script_path),
+    "--paths={}".format(os.path.join(script_path, "src")),
+    # 기본 모듈
+    "--hidden-import=PyQt5",
+    "--hidden-import=PyQt5.QtWidgets",
+    "--hidden-import=PyQt5.QtCore", 
+    "--hidden-import=PyQt5.QtGui",
+    "--hidden-import=pandas",
+    "--hidden-import=numpy",
+    "--hidden-import=openpyxl",
+    # 프로그램 모듈
     "--hidden-import=overtime_analyzer",
     "--hidden-import=overtime_analyzer.ui.analyzer_ui", 
     "--hidden-import=overtime_analyzer.services.analyzer_service",
@@ -60,12 +70,17 @@ pyinstaller_args = [
     "--hidden-import=overtime_analyzer.models.data_models",
     "--hidden-import=overtime_analyzer.utils.date_utils",
     "--hidden-import=overtime_analyzer.utils.file_utils",
+    # 빌드 옵션
     "--noupx",
+    # PyQt5 데이터 포함
+    "--collect-all=PyQt5",
 ]
 
 # 콘솔 창 표시 여부
 if not args.console:
     pyinstaller_args.append("--windowed")
+else:
+    pyinstaller_args.append("--console")
 
 # PyInstaller 실행
 print(f"빌드 명령어: {' '.join(pyinstaller_args)}")
