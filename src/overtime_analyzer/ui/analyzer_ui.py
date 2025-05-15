@@ -26,22 +26,9 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QDate
 
-# PyInstaller 환경에서의 호환성을 위한 imports 처리
-try:
-    from ..services.analyzer_service import AnalyzerService
-    from ..services.security_processor import SecurityProcessor
-    from ..services.overtime_processor import OvertimeProcessor
-except ImportError:
-    # 상대 경로 import 실패 시 절대 경로로 시도
-    try:
-        from src.overtime_analyzer.services.analyzer_service import AnalyzerService
-        from src.overtime_analyzer.services.security_processor import SecurityProcessor
-        from src.overtime_analyzer.services.overtime_processor import OvertimeProcessor
-    except ImportError:
-        # 마지막 시도: PyInstaller 번들 환경
-        from overtime_analyzer.services.analyzer_service import AnalyzerService
-        from overtime_analyzer.services.security_processor import SecurityProcessor
-        from overtime_analyzer.services.overtime_processor import OvertimeProcessor
+from overtime_analyzer.services.analyzer_service import AnalyzerService
+from overtime_analyzer.services.security_processor import SecurityProcessor
+from overtime_analyzer.services.overtime_processor import OvertimeProcessor
 
 
 class AnalyzerUI(QMainWindow):

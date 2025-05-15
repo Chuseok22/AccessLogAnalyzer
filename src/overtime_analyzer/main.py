@@ -8,9 +8,7 @@ GUI 애플리케이션을 시작하고 초기화합니다.
 
 import sys
 from PyQt5.QtWidgets import QApplication
-
-# 상대 경로 import로 변경
-from .ui.analyzer_ui import AnalyzerUI
+from overtime_analyzer.ui.analyzer_ui import AnalyzerUI
 
 
 def main():
