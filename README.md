@@ -5,27 +5,35 @@
 ## 프로젝트 구조
 
 ```
+app.py                     # 애플리케이션 시작 스크립트
+build.py                   # 빌드 스크립트
+run.bat                    # Windows 실행 배치 파일
+run.sh                     # macOS/Linux 실행 쉘 스크립트
+setup.bat                  # Windows 설치 배치 파일
+setup.sh                   # macOS/Linux 설치 쉘 스크립트
 src/
-  overtime_analyzer/
+  __init__.py
+  main.py                  # 메인 애플리케이션 진입점
+  models/
     __init__.py
-    main.py                # 메인 애플리케이션 진입점
-    models/
-      __init__.py
-      data_models.py       # 데이터 모델 클래스
-    services/
-      __init__.py
-      analyzer_service.py  # 분석 서비스
-      overtime_processor.py # 초과근무 처리기
-      security_processor.py # 보안 출입 기록 처리기
-    ui/
-      __init__.py
-      analyzer_ui.py       # 사용자 인터페이스
-    utils/
-      __init__.py
-      date_utils.py        # 날짜 관련 유틸리티
-      file_utils.py        # 파일 관련 유틸리티
+    data_models.py         # 데이터 모델 클래스
+  services/
+    __init__.py
+    analyzer_service.py    # 분석 서비스
+    overtime_processor.py  # 초과근무 처리기
+    security_processor.py  # 보안 출입 기록 처리기
+  ui/
+    __init__.py
+    analyzer_ui.py         # 사용자 인터페이스
+  utils/
+    __init__.py
+    date_utils.py          # 날짜 관련 유틸리티
+    file_utils.py          # 파일 관련 유틸리티
 tests/
   test_core_functions.py   # 단위 테스트
+backup/                    # 이전 버전 백업 디렉토리
+  overtime_analyzer.py
+  README_overtime_analyzer.md
 ```
 
 ## 주요 기능

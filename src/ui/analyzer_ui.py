@@ -26,9 +26,9 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QDate
 
-from overtime_analyzer.services.analyzer_service import AnalyzerService
-from overtime_analyzer.services.security_processor import SecurityProcessor
-from overtime_analyzer.services.overtime_processor import OvertimeProcessor
+from ..services.analyzer_service import AnalyzerService
+from ..services.security_processor import SecurityProcessor
+from ..services.overtime_processor import OvertimeProcessor
 
 
 class AnalyzerUI(QMainWindow):

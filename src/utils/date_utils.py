@@ -73,19 +73,19 @@ def is_valid_time_format(time_str: str) -> bool:
         return False
 
 
-def calculate_business_date(record_date: date, record_hour: int) -> date:
+def calculate_business_date(record_date: date, record_time: time) -> date:
     """
     새벽 4시 기준으로 업무일을 계산합니다.
     새벽 0시~4시는 전날의 업무일로 처리합니다.
 
     Args:
         record_date: 기록 날짜
-        record_hour: 기록 시간의 시간 부분(hour)
+        record_time: 기록 시간
 
     Returns:
         date: 계산된 업무일 날짜
     """
     # 0시 ~ 4시 사이는 전날 업무일로 계산
-    if 0 <= record_hour < 4:
+    if record_time and 0 <= record_time.hour < 4:
         return record_date - timedelta(days=1)
     return record_date
