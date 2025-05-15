@@ -24,32 +24,32 @@ class SecurityRecord:
 class SecurityStatusChange:
     """경비 상태 변화 기록 데이터 클래스"""
 
-    time: datetime  # 변화 시간
-    status: str  # 상태 (해제/시작)
+    time: time  # 변화 시간
+    status: str  # 상태 (해제/설정)
+    record: "SecurityRecord"  # 원본 기록
 
 
 @dataclass
 class SecurityPeriod:
     """경비 상태 구간 데이터 클래스"""
 
-    start: datetime  # 시작 시간
-    end: datetime  # 종료 시간
-    status: str  # 상태 (해제/시작)
+    status: str  # 상태 (해제/설정)
+    start_time: time  # 시작 시간
+    end_time: Optional[time]  # 종료 시간
 
 
 @dataclass
 class OvertimeRecord:
     """초과근무 기록 데이터 클래스"""
 
-    business_date: date  # 업무일자 (새벽 4시 기준)
-    original_date: date  # 원래 날짜
+    date: date  # 근무 날짜
     start_time: time  # 시작 시간
     end_time: time  # 종료 시간
-    overtime_type: str  # 초과근무 유형 (조기출근/야간근무/휴일근무)
-    employee_name: str  # 직원 이름
+    hours: str  # 근무 시간
+    employee_id: str  # 직원 ID
+    name: str  # 직원 이름
     department: str  # 부서명
-    recorded_overtime: float  # 기록된 초과근무시간
-    work_content: str  # 근무 내용
+    work_description: str  # 근무 내용
     is_holiday: bool  # 휴일 여부
 
 
@@ -57,11 +57,10 @@ class OvertimeRecord:
 class SuspiciousRecord:
     """의심스러운 초과근무 기록 데이터 클래스"""
 
-    date: date  # 날짜
+    record_date: date  # 날짜
     employee_name: str  # 직원명
     department: str  # 부서명
     overtime_hours: str  # 초과근무 시간 표시
-    overtime_period: str  # 초과근무 시간 (시작-종료)
     security_status: str  # 경비 상태
     suspicious_reason: str  # 의심 사유
     work_content: str  # 근무 내용

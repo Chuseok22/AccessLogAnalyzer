@@ -8,7 +8,7 @@ GUI 애플리케이션을 시작하고 초기화합니다.
 
 import sys
 from PyQt5.QtWidgets import QApplication
-from overtime_analyzer.ui.analyzer_ui import AnalyzerUI
+from ui.analyzer_ui import AnalyzerUI
 
 
 def main():
@@ -18,7 +18,7 @@ def main():
     app = QApplication(sys.argv)
     window = AnalyzerUI()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())  # sys.exit 추가하여 정상 종료 보장
 
 
 if __name__ == "__main__":

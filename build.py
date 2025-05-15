@@ -4,88 +4,65 @@ import sys
 import shutil
 import argparse
 
-# Window CP1252 환경 stdout 인코딩 설정
+# 인코딩 설정
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except AttributeError:
     pass
 
-# 현재 스크립트 경로
+# 경로 설정
 script_path = os.path.abspath(os.path.dirname(__file__))
-main_script = os.path.join(script_path, "overtime_analyzer.py")
-
-# 메인 스크립트 존재 확인
-if not os.path.exists(main_script):
-    print(f"메인 스크립트가 존재하지 않습니다: {main_script}")
-    sys.exit(1)
-
-# dist 폴더 확인 및 생성
+main_script = os.path.join(script_path, "app.py")
 dist_path = os.path.join(script_path, "dist")
-if not os.path.exists(dist_path):
-    os.makedirs(dist_path)
 
 # 명령행 인수 파싱
 parser = argparse.ArgumentParser(description="초과근무 분석기 빌드 스크립트")
-parser.add_argument("--console", action="store_true", help="콘솔 창과 함께 실행")
 parser.add_argument("--clean-build", action="store_true", help="빌드 전 이전 빌드 파일 삭제")
+parser.add_argument("--console", action="store_true", help="콘솔 창 표시")
 args = parser.parse_args()
 
-# 빌드 전 정리
-if args.clean_build:
-    build_path = os.path.join(script_path, "build")
-    if os.path.exists(build_path):
-        print(f"기존 build 폴더 삭제: {build_path}")
-        shutil.rmtree(build_path)
-
-    if os.path.exists(dist_path):
-        print(f"기존 dist 폴더 삭제: {dist_path}")
-        shutil.rmtree(dist_path)
-        os.makedirs(dist_path)
+# 빌드 폴더 정리
+if args.clean_build and os.path.exists(dist_path):
+    print(f"기존 dist 폴더 삭제: {dist_path}")
+    shutil.rmtree(dist_path)
+    os.makedirs(dist_path)
 
 # PyInstaller 옵션
-pyinstaller_args = [
+pyinstaller_options = [
     main_script,
     "--name=OvertimeAnalyzer",
     "--onefile",
     "--clean",
-    "--distpath={}".format(dist_path),  # 명시적으로 dist 경로 지정
+    "--distpath={}".format(dist_path),
     "--add-data={}".format(os.path.join(script_path, "requirements.txt") + os.path.pathsep + "."),
+    "--paths={}".format(script_path),
+    "--paths={}".format(os.path.join(script_path, "src")),
+    "--hidden-import=src",
+    "--hidden-import=src.ui.analyzer_ui",
+    "--hidden-import=src.services.analyzer_service",
+    "--hidden-import=src.services.security_processor",
+    "--hidden-import=src.services.overtime_processor",
+    "--hidden-import=src.models.data_models",
+    "--hidden-import=src.utils.date_utils",
+    "--hidden-import=src.utils.file_utils",
     "--noupx",
 ]
 
-# 콘솔 창 표시 여부
+# 콘솔 창 설정
 if not args.console:
-    pyinstaller_args.append("--windowed")
+    pyinstaller_options.append("--windowed")
+else:
+    pyinstaller_options.append("--console")
 
-# PyInstaller 실행
-print(f"빌드 명령어: {' '.join(pyinstaller_args)}")
-try:
-    PyInstaller.__main__.run(pyinstaller_args)
-except Exception as e:
-    print(f"PyInstaller 실행 중 오류 발생: {str(e)}")
-    sys.exit(1)
+print(f"빌드 명령어: {main_script}")
+PyInstaller.__main__.run(pyinstaller_options)
 
-# 빌드된 파일 경로 확인
-try:
-    # 운영체제에 맞게 확장자 결정
-    if sys.platform.startswith("win"):
-        exe_extension = ".exe"
-    elif sys.platform.startswith("darwin"):
-        exe_extension = ""  # macOS는 확장자가 없음
-    else:  # Linux
-        exe_extension = ""
-
-    # 빌드된 파일의 이름은 --name 옵션으로 지정한 이름과 같음
-    exe_name = "OvertimeAnalyzer"
-    exe_file = os.path.join(dist_path, f"{exe_name}{exe_extension}")
-
-    if os.path.exists(exe_file):
-        print(f"빌드 성공: {exe_file}")
-    else:
-        print(f"빌드 실패: {exe_file} 파일을 찾을 수 없습니다.")
-        sys.exit(1)
-except Exception as e:
-    print(f"파일 확인 중 오류 발생: {str(e)}")
+# 빌드 결과 확인
+exe_file = os.path.join(dist_path, "OvertimeAnalyzer.exe")
+if os.path.exists(exe_file):
+    print(f"빌드 성공: {exe_file}")
+else:
+    print(f"빌드 실패: {exe_file} 파일을 찾을 수 없습니다.")
     sys.exit(1)
 
 print("빌드가 완료되었습니다!")
