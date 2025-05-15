@@ -48,8 +48,18 @@ pyinstaller_args = [
     "--name=OvertimeAnalyzer",
     "--onefile",
     "--clean",
-    "--distpath={}".format(dist_path),  # 명시적으로 dist 경로 지정
+    "--distpath={}".format(dist_path),
     "--add-data={}".format(os.path.join(script_path, "requirements.txt") + os.path.pathsep + "."),
+    "--paths={}".format(script_path),  # 스크립트 경로 추가
+    "--paths={}".format(os.path.join(script_path, "src")),  # src 경로 추가
+    "--hidden-import=overtime_analyzer",
+    "--hidden-import=overtime_analyzer.ui.analyzer_ui", 
+    "--hidden-import=overtime_analyzer.services.analyzer_service",
+    "--hidden-import=overtime_analyzer.services.security_processor",
+    "--hidden-import=overtime_analyzer.services.overtime_processor",
+    "--hidden-import=overtime_analyzer.models.data_models",
+    "--hidden-import=overtime_analyzer.utils.date_utils",
+    "--hidden-import=overtime_analyzer.utils.file_utils",
     "--noupx",
 ]
 
