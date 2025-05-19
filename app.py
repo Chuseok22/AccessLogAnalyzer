@@ -172,27 +172,23 @@ class OvertimeAnalyzer(QMainWindow):
                 try:
                     file_ext = os.path.splitext(file_path)[1].lower()
 
-                    # 엑셀 파일 로드 (헤더 없음으로 처리)
+                    # 엑셀 파일 로드 (헤더 있음으로 처리)
                     if file_ext == ".xls":
-                        self.overtime_df = pd.read_excel(file_path, engine="xlrd", header=None)
+                        self.overtime_df = pd.read_excel(file_path, engine="xlrd", header=0)
                     else:
-                        self.overtime_df = pd.read_excel(file_path, engine="openpyxl", header=None)
+                        self.overtime_df = pd.read_excel(file_path, engine="openpyxl", header=0)
 
                     # 데이터 유효성 확인
-                    if len(self.overtime_df) < 3:
+                    if len(self.overtime_df) < 1:
                         QMessageBox.warning(
                             self,
                             "경고",
-                            "초과근무 기록 파일에 데이터가 충분하지 않습니다. 최소 3행 이상의 데이터가 필요합니다.",
+                            "초과근무 기록 파일에 데이터가 충분하지 않습니다. 최소 2행 이상의 데이터가 필요합니다.",
                         )
                     else:
                         # 데이터 구조 표시
                         data_info = f"초과근무 기록 파일을 로드했습니다.\n"
-                        data_info += (
-                            f"총 {len(self.overtime_df)} 행 중 첫 2행은 헤더로 무시됩니다.\n"
-                        )
-                        data_info += f"실제 처리될 데이터는 {len(self.overtime_df) - 2}개 행입니다."
-
+                        data_info += f"총 {len(self.overtime_df)} 행의 데이터가 로드되었습니다."
                         QMessageBox.information(self, "성공", data_info)
                 except Exception as e:
                     QMessageBox.critical(
@@ -510,19 +506,44 @@ class OvertimeAnalyzer(QMainWindow):
     def process_overtime_log(self, df):
         """초과근무 기록을 처리합니다."""
         try:
-            # 데이터가 3행부터 시작하고, 열 위치가 고정된 경우를 처리
-            # 2열에 헤더가 있는 경우 확인
-            if len(df) >= 2:
-                # 필요하면 1-2행 제거 (헤더 및 SQL 실행 결과)
-                df = df.iloc[2:].reset_index(drop=True)
-
-            # 위치 기반으로 컬럼 매핑
-            col_mapping = {
-                "날짜": 6,  # G열 - 초과근무일자
-                "시작시간": 7,  # H열 - 출근시간
-                "종료시간": 8,  # I열 - 퇴근시간
-                "이름": 3,  # D열 - 성명
-            }
+            # 1행을 헤더로 사용하고 2행부터 데이터 시작
+            # 파일 로드 시 이미 헤더로 설정되었는지 확인
+            if df.iloc[0].equals(pd.Series([i for i in range(len(df.columns))], index=df.columns)):
+                # 헤더가 없는 경우, 1행을 헤더로 설정
+                headers = df.iloc[0].values
+                df.columns = headers
+                # 첫 번째 행(헤더)을 제거하고 2행부터 데이터 시작
+                df = df.iloc[1:].reset_index(drop=True)
+            else:
+                # 이미 헤더가 설정된 경우
+                print("[INFO] 헤더가 이미 설정되어 있습니다.")
+            
+            # 컬럼 이름을 통한 매핑 시도
+            col_mapping = {}
+            
+            # 컬럼 이름으로 필요한 필드 찾기 (대소문자 구분 없이, 부분 일치도 허용)
+            for col in df.columns:
+                col_str = str(col).lower() if not pd.isna(col) else ""
+                if any(keyword in col_str for keyword in ["초과근무일자", "날짜", "일자"]):
+                    col_mapping["날짜"] = col
+                elif any(keyword in col_str for keyword in ["출근시간", "시작"]):
+                    col_mapping["시작시간"] = col
+                elif any(keyword in col_str for keyword in ["퇴근시간", "종료"]):
+                    col_mapping["종료시간"] = col
+                elif any(keyword in col_str for keyword in ["이름", "성명", "직원"]):
+                    col_mapping["이름"] = col
+            
+            # 위치 기반 백업 매핑 (헤더 이름으로 찾지 못한 경우)
+            if "날짜" not in col_mapping:
+                col_mapping["날짜"] = df.columns[6]  # G열 - 초과근무일자
+            if "시작시간" not in col_mapping:
+                col_mapping["시작시간"] = df.columns[7]  # H열 - 출근시간
+            if "종료시간" not in col_mapping:
+                col_mapping["종료시간"] = df.columns[8]  # I열 - 퇴근시간
+            if "이름" not in col_mapping:
+                col_mapping["이름"] = df.columns[3]  # D열 - 성명
+            
+            print(f"[INFO] 열 매핑 결과: {col_mapping}")
 
             # 인덱스 기반으로 컬럼 이름 만들기
             renamed_columns = {}
