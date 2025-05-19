@@ -56,7 +56,7 @@ class OvertimeAnalyzer(QMainWindow):
 
         # 초과근무 기록 파일 선택 영역
         overtime_file_group = QGroupBox(
-            "초과근무 기록 엑셀 파일 선택 (3행부터 데이터 시작, G열:일자, H열:출근, I열:퇴근)"
+            "초과근무 기록 엑셀 파일 선택 (1행 헤더, 2행부터 데이터 시작, G열:일자, H열:출근, I열:퇴근)"
         )
         overtime_file_layout = QHBoxLayout()
 
@@ -66,7 +66,7 @@ class OvertimeAnalyzer(QMainWindow):
 
         # 설명 레이블 추가
         overtime_info = QLabel(
-            "※ 엑셀 파일은 3행부터 데이터가 시작되고, 초과근무일자(G열), 출근시간(H열), 퇴근시간(I열) 형식이어야 합니다."
+            "※ 엑셀 파일은 1행이 헤더, 2행부터 데이터가 시작되며, 초과근무일자(G열), 출근시간(H열), 퇴근시간(I열) 형식이어야 합니다."
         )
         overtime_info.setWordWrap(True)
 
@@ -172,18 +172,18 @@ class OvertimeAnalyzer(QMainWindow):
                 try:
                     file_ext = os.path.splitext(file_path)[1].lower()
 
-                    # 엑셀 파일 로드 (헤더 있음으로 처리)
+                    # 엑셀 파일 로드 (첫 행을 헤더로 처리)
                     if file_ext == ".xls":
                         self.overtime_df = pd.read_excel(file_path, engine="xlrd", header=0)
                     else:
                         self.overtime_df = pd.read_excel(file_path, engine="openpyxl", header=0)
 
-                    # 데이터 유효성 확인
+                    # 데이터 유효성 확인 (헤더 제외 최소 1건의 실제 데이터 필요)
                     if len(self.overtime_df) < 1:
                         QMessageBox.warning(
                             self,
                             "경고",
-                            "초과근무 기록 파일에 데이터가 충분하지 않습니다. 최소 2행 이상의 데이터가 필요합니다.",
+                            "초과근무 기록 파일에 데이터가 충분하지 않습니다. 최소 1행 이상의 데이터가 필요합니다.",
                         )
                     else:
                         # 데이터 구조 표시
@@ -506,89 +506,68 @@ class OvertimeAnalyzer(QMainWindow):
     def process_overtime_log(self, df):
         """초과근무 기록을 처리합니다."""
         try:
-            # 1행을 헤더로 사용하고 2행부터 데이터 시작
-            # 파일 로드 시 이미 헤더로 설정되었는지 확인
-            if df.iloc[0].equals(pd.Series([i for i in range(len(df.columns))], index=df.columns)):
-                # 헤더가 없는 경우, 1행을 헤더로 설정
-                headers = df.iloc[0].values
-                df.columns = headers
-                # 첫 번째 행(헤더)을 제거하고 2행부터 데이터 시작
-                df = df.iloc[1:].reset_index(drop=True)
-            else:
-                # 이미 헤더가 설정된 경우
-                print("[INFO] 헤더가 이미 설정되어 있습니다.")
-            
-            # 컬럼 이름을 통한 매핑 시도
-            col_mapping = {}
-            
-            # 컬럼 이름으로 필요한 필드 찾기 (대소문자 구분 없이, 부분 일치도 허용)
-            for col in df.columns:
-                col_str = str(col).lower() if not pd.isna(col) else ""
-                if any(keyword in col_str for keyword in ["초과근무일자", "날짜", "일자"]):
-                    col_mapping["날짜"] = col
-                elif any(keyword in col_str for keyword in ["출근시간", "시작"]):
-                    col_mapping["시작시간"] = col
-                elif any(keyword in col_str for keyword in ["퇴근시간", "종료"]):
-                    col_mapping["종료시간"] = col
-                elif any(keyword in col_str for keyword in ["이름", "성명", "직원"]):
-                    col_mapping["이름"] = col
-            
-            # 위치 기반 백업 매핑 (헤더 이름으로 찾지 못한 경우)
-            if "날짜" not in col_mapping:
-                col_mapping["날짜"] = df.columns[6]  # G열 - 초과근무일자
-            if "시작시간" not in col_mapping:
-                col_mapping["시작시간"] = df.columns[7]  # H열 - 출근시간
-            if "종료시간" not in col_mapping:
-                col_mapping["종료시간"] = df.columns[8]  # I열 - 퇴근시간
-            if "이름" not in col_mapping:
-                col_mapping["이름"] = df.columns[3]  # D열 - 성명
-            
-            print(f"[INFO] 열 매핑 결과: {col_mapping}")
+            # 파일이 이미 header=0로 로드되었으므로 별도의 헤더 감지 로직은 필요 없음
+            print("[INFO] 헤더가 설정된 상태로 초과근무 기록 처리 시작")
 
-            # 인덱스 기반으로 컬럼 이름 만들기
+            # 표준화된 열 이름으로 변환
+            # 인덱스 기반으로 컬럼 이름 표준화 - 특정 위치의 컬럼을 우리가 정의한 이름으로 매핑
             renamed_columns = {}
-            for i in range(len(df.columns)):
+
+            # 기본 열 개수 확인
+            min_expected_columns = 14  # 최소 14개의 열이 필요
+
+            if len(df.columns) < min_expected_columns:
+                print(
+                    f"[경고] 예상 열 수보다 적은 열이 있습니다. 예상: {min_expected_columns}, 실제: {len(df.columns)}"
+                )
+
+            # 고정 위치 기반 매핑 수행
+            for i, col in enumerate(df.columns):
                 if i == 0:
-                    renamed_columns[df.columns[i]] = "부서명"
+                    renamed_columns[col] = "부서명"
                 elif i == 1:
-                    renamed_columns[df.columns[i]] = "직급"
+                    renamed_columns[col] = "직급"
                 elif i == 2:
-                    renamed_columns[df.columns[i]] = "개인식별번호"
+                    renamed_columns[col] = "개인식별번호"
                 elif i == 3:
-                    renamed_columns[df.columns[i]] = "성명"
+                    renamed_columns[col] = "성명"
                 elif i == 4:
-                    renamed_columns[df.columns[i]] = "현업여부"
+                    renamed_columns[col] = "현업여부"
                 elif i == 5:
-                    renamed_columns[df.columns[i]] = "휴일여부"
+                    renamed_columns[col] = "휴일여부"
                 elif i == 6:
-                    renamed_columns[df.columns[i]] = "초과근무일자"
+                    renamed_columns[col] = "초과근무일자"
                 elif i == 7:
-                    renamed_columns[df.columns[i]] = "출근시간"
+                    renamed_columns[col] = "출근시간"
                 elif i == 8:
-                    renamed_columns[df.columns[i]] = "퇴근시간"
+                    renamed_columns[col] = "퇴근시간"
                 elif i == 9:
-                    renamed_columns[df.columns[i]] = "출근IP"
+                    renamed_columns[col] = "출근IP"
                 elif i == 10:
-                    renamed_columns[df.columns[i]] = "퇴근IP"
+                    renamed_columns[col] = "퇴근IP"
                 elif i == 11:
-                    renamed_columns[df.columns[i]] = "초과근무시간"
+                    renamed_columns[col] = "초과근무시간"
                 elif i == 12:
-                    renamed_columns[df.columns[i]] = "수당시간"
+                    renamed_columns[col] = "수당시간"
                 elif i == 13:
-                    renamed_columns[df.columns[i]] = "근무내용"
+                    renamed_columns[col] = "근무내용"
                 else:
-                    renamed_columns[df.columns[i]] = f"컬럼{i}"
+                    renamed_columns[col] = f"컬럼{i}"
 
             # 데이터프레임 컬럼 이름 변경
             df = df.rename(columns=renamed_columns)
 
-            # 컬럼 이름 기반으로 매핑
+            # 표준화된 컬럼 매핑 (데이터 처리에 필요한 핵심 필드 접근용)
             col_mapping = {
                 "날짜": "초과근무일자",
                 "시작시간": "출근시간",
                 "종료시간": "퇴근시간",
                 "이름": "성명",
             }
+
+            print(
+                f"[INFO] 초과근무 데이터 표준화 완료: {list(df.columns)[:min(len(df.columns), 14)]}"
+            )
 
             # 날짜 필터링 적용
             start_date = self.start_date.date().toString("yyyy-MM-dd")
